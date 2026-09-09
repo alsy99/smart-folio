@@ -1,0 +1,35 @@
+syntax = "proto3";
+
+package learning.v1;
+
+option go_package = "aperture/go/gen/learning/v1;learningv1";
+
+import "proto/common/v1/types.proto";
+
+service LearningService {
+  rpc RecordTrade(RecordTradeRequest) returns (RecordTradeResponse);
+  rpc ListJournal(ListJournalRequest) returns (ListJournalResponse);
+  rpc GetWeights(GetWeightsRequest) returns (GetWeightsResponse);
+}
+
+message RecordTradeRequest {
+  common.v1.PaperTrade trade = 1;
+}
+
+message RecordTradeResponse {
+  common.v1.JournalEntry entry = 1;
+}
+
+message ListJournalRequest {
+  int32 limit = 1;
+}
+
+message ListJournalResponse {
+  repeated common.v1.JournalEntry entries = 1;
+}
+
+message GetWeightsRequest {}
+
+message GetWeightsResponse {
+  repeated common.v1.StrategyWeight weights = 1;
+}

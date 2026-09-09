@@ -1,0 +1,41 @@
+syntax = "proto3";
+
+package sentiment.v1;
+
+option go_package = "aperture/go/gen/sentiment/v1;sentimentv1";
+
+import "proto/common/v1/types.proto";
+
+service SentimentService {
+  rpc ScoreSymbols(ScoreSymbolsRequest) returns (ScoreSymbolsResponse);
+  rpc ListNews(ListNewsRequest) returns (ListNewsResponse);
+  rpc GetInvestigations(GetInvestigationsRequest) returns (GetInvestigationsResponse);
+}
+
+message ScoreSymbolsRequest {
+  repeated string symbols = 1;
+}
+
+message ScoreSymbolsResponse {
+  repeated common.v1.SentimentScore scores = 1;
+}
+
+message ListNewsRequest {
+  int32 limit = 1;
+}
+
+message ListNewsResponse {
+  repeated common.v1.NewsItem items = 1;
+  string mode = 2;
+  int64 last_refresh_unix_ms = 3;
+}
+
+message GetInvestigationsRequest {}
+
+message GetInvestigationsResponse {
+  repeated common.v1.InvestigationReport reports = 1;
+  int32 workers_active = 2;
+  int32 workers_max = 3;
+  int64 last_refresh_unix_ms = 4;
+  string mode = 5;
+}

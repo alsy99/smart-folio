@@ -1,0 +1,79 @@
+syntax = "proto3";
+
+package trading.v1;
+
+option go_package = "aperture/go/gen/trading/v1;tradingv1";
+
+import "proto/common/v1/types.proto";
+
+service TradingService {
+  rpc GetPortfolio(GetPortfolioRequest) returns (GetPortfolioResponse);
+  rpc GetCampaign(GetCampaignRequest) returns (GetCampaignResponse);
+  rpc StartCampaign(StartCampaignRequest) returns (GetCampaignResponse);
+  rpc SetAutopilot(SetAutopilotRequest) returns (SetAutopilotResponse);
+  rpc Tick(TickRequest) returns (TickResponse);
+  rpc GetBenchmarks(GetBenchmarksRequest) returns (GetBenchmarksResponse);
+  rpc SetStrategyWeights(SetStrategyWeightsRequest) returns (SetStrategyWeightsResponse);
+}
+
+message GetPortfolioRequest {}
+
+message GetPortfolioResponse {
+  double cash = 1;
+  double equity = 2;
+  double start_equity = 3;
+  double return_pct = 4;
+  repeated common.v1.Position positions = 5;
+  repeated common.v1.PaperTrade open_trades = 6;
+  repeated common.v1.StrategyWeight weights = 7;
+}
+
+message GetCampaignRequest {}
+
+message StartCampaignRequest {
+  int32 days = 1;
+}
+
+message GetCampaignResponse {
+  bool active = 1;
+  bool autopilot = 2;
+  bool market_open = 3;
+  int64 started_at_unix_ms = 4;
+  int64 ends_at_unix_ms = 5;
+  int32 days_elapsed = 6;
+  int32 days_total = 7;
+  string session_status = 8;
+  int32 ticks = 9;
+  bool clock_override = 10;
+}
+
+message SetAutopilotRequest {
+  bool enabled = 1;
+}
+
+message SetAutopilotResponse {
+  bool enabled = 1;
+}
+
+message TickRequest {}
+
+message TickResponse {
+  bool skipped = 1;
+  string reason = 2;
+  int32 fills = 3;
+  int32 closes = 4;
+  double equity = 5;
+}
+
+message GetBenchmarksRequest {}
+
+message GetBenchmarksResponse {
+  repeated common.v1.BenchmarkPoint benchmarks = 1;
+  double portfolio_return_pct = 2;
+}
+
+message SetStrategyWeightsRequest {
+  repeated common.v1.StrategyWeight weights = 1;
+}
+
+message SetStrategyWeightsResponse {}

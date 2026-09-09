@@ -1,0 +1,10 @@
+.DS_Store
+.env
+node_modules/
+apps/web/.next/
+apps/web/out/
+bin/
+data/
+pids/
+*.log
+tmp-aperture-web/

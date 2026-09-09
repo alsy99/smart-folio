@@ -1,0 +1,37 @@
+syntax = "proto3";
+
+package marketdata.v1;
+
+option go_package = "aperture/go/gen/marketdata/v1;marketdatav1";
+
+import "proto/common/v1/types.proto";
+
+service MarketDataService {
+  rpc ListUniverse(ListUniverseRequest) returns (ListUniverseResponse);
+  rpc GetQuotes(GetQuotesRequest) returns (GetQuotesResponse);
+  rpc GetBars(GetBarsRequest) returns (GetBarsResponse);
+}
+
+message ListUniverseRequest {}
+
+message ListUniverseResponse {
+  repeated common.v1.Instrument instruments = 1;
+}
+
+message GetQuotesRequest {
+  repeated string symbols = 1;
+}
+
+message GetQuotesResponse {
+  repeated common.v1.Quote quotes = 1;
+}
+
+message GetBarsRequest {
+  string symbol = 1;
+  string interval = 2;
+  int32 count = 3;
+}
+
+message GetBarsResponse {
+  repeated common.v1.Bar bars = 1;
+}

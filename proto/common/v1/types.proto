@@ -1,0 +1,135 @@
+syntax = "proto3";
+
+package common.v1;
+
+option go_package = "aperture/go/gen/common/v1;commonv1";
+
+message Quote {
+  string symbol = 1;
+  double last = 2;
+  double change_pct = 3;
+  int64 ts_unix_ms = 4;
+  string currency = 5;
+}
+
+message Bar {
+  string symbol = 1;
+  string interval = 2;
+  int64 ts_unix_ms = 3;
+  double open = 4;
+  double high = 5;
+  double low = 6;
+  double close = 7;
+  double volume = 8;
+}
+
+message Instrument {
+  string symbol = 1;
+  string name = 2;
+  string exchange = 3;
+  string sector = 4;
+  string currency = 5;
+  bool is_benchmark = 6;
+}
+
+message StrategyWeight {
+  string strategy_id = 1;
+  double weight = 2;
+  double expectancy = 3;
+  double win_rate = 4;
+  string regime = 5;
+}
+
+message StrategyTilt {
+  string strategy_id = 1;
+  double tilt = 2;
+  string reason = 3;
+}
+
+message NewsItem {
+  string id = 1;
+  string provider = 2;
+  string title = 3;
+  string summary = 4;
+  string url = 5;
+  int64 published_at_unix_ms = 6;
+  repeated string symbols = 7;
+}
+
+message InvestigationReport {
+  string id = 1;
+  string headline = 2;
+  repeated string symbols = 3;
+  string event_type = 4;
+  string stance = 5;
+  double score = 6;
+  double confidence = 7;
+  int32 corroboration = 8;
+  string horizon = 9;
+  repeated StrategyTilt strategy_implications = 10;
+  bool stand_aside = 11;
+  repeated NewsItem sources = 12;
+  int64 analyzed_at_unix_ms = 13;
+  string mode = 14;
+  string thesis = 15;
+  string risks = 16;
+  string status = 17;
+}
+
+message BenchmarkPoint {
+  string id = 1;
+  string name = 2;
+  double last = 3;
+  double start = 4;
+  double return_pct = 5;
+  double excess_pct = 6;
+  double excess_ann_pct = 7;
+  bool on_track = 8;
+  double beat_rate = 9;
+}
+
+message Position {
+  string symbol = 1;
+  double qty = 2;
+  double avg_price = 3;
+  double last = 4;
+  double market_value = 5;
+  double pnl = 6;
+  double weight = 7;
+}
+
+message PaperTrade {
+  string id = 1;
+  string symbol = 2;
+  string side = 3;
+  string strategy_id = 4;
+  double qty = 5;
+  double entry = 6;
+  double exit = 7;
+  double pnl = 8;
+  double pnl_pct = 9;
+  double nifty_return = 10;
+  double excess_return = 11;
+  repeated string investigation_ids = 12;
+  repeated string attribution_tags = 13;
+  string lesson = 14;
+  int64 opened_at_unix_ms = 15;
+  int64 closed_at_unix_ms = 16;
+  bool open = 17;
+}
+
+message JournalEntry {
+  string id = 1;
+  PaperTrade trade = 2;
+  string lesson = 3;
+  repeated string tags = 4;
+  int64 ts_unix_ms = 5;
+}
+
+message SentimentScore {
+  string symbol = 1;
+  double score = 2;
+  string label = 3;
+  double confidence = 4;
+  repeated string drivers = 5;
+}

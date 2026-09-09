@@ -1,0 +1,22 @@
+syntax = "proto3";
+
+package advisor.v1;
+
+option go_package = "aperture/go/gen/advisor/v1;advisorv1";
+
+service AdvisorService {
+  rpc Chat(ChatRequest) returns (ChatResponse);
+}
+
+message ChatRequest {
+  string message = 1;
+  string portfolio_json = 2;
+  string benchmarks_json = 3;
+  string journal_json = 4;
+  string investigations_json = 5;
+}
+
+message ChatResponse {
+  string reply = 1;
+  string mode = 2;
+}

@@ -1,0 +1,66 @@
+services:
+  marketdata:
+    build:
+      context: .
+      args: { SERVICE: marketdata }
+    environment:
+      MARKETDATA_BIND: ":9081"
+    ports: ["9081:9081"]
+  learning:
+    build:
+      context: .
+      args: { SERVICE: learning }
+    environment:
+      LEARNING_BIND: ":9083"
+    ports: ["9083:9083"]
+  sentiment:
+    build:
+      context: .
+      args: { SERVICE: sentiment }
+    environment:
+      SENTIMENT_BIND: ":9084"
+      MAX_INVESTIGATION_WORKERS: "16"
+      NEWS_REFRESH_SECONDS: "900"
+    ports: ["9084:9084"]
+  advisor:
+    build:
+      context: .
+      args: { SERVICE: advisor }
+    environment:
+      ADVISOR_BIND: ":9085"
+    ports: ["9085:9085"]
+  trading:
+    build:
+      context: .
+      args: { SERVICE: trading }
+    environment:
+      TRADING_BIND: ":9082"
+      MARKETDATA_ADDR: "marketdata:9081"
+      LEARNING_ADDR: "learning:9083"
+      SENTIMENT_ADDR: "sentiment:9084"
+      MARKET_CLOCK_OVERRIDE: "open"
+      AUTOSTART_CAMPAIGN: "true"
+    ports: ["9082:9082"]
+    depends_on: [marketdata, learning, sentiment]
+  gateway:
+    build:
+      context: .
+      args: { SERVICE: gateway }
+    environment:
+      GATEWAY_BIND: ":8080"
+      MARKETDATA_ADDR: "marketdata:9081"
+      TRADING_ADDR: "trading:9082"
+      LEARNING_ADDR: "learning:9083"
+      SENTIMENT_ADDR: "sentiment:9084"
+      ADVISOR_ADDR: "advisor:9085"
+    ports: ["8080:8080"]
+    depends_on: [marketdata, trading, learning, sentiment, advisor]
+  web:
+    image: node:22
+    working_dir: /app
+    volumes: ["./apps/web:/app"]
+    command: sh -c "npm install && npx next dev --turbopack -p 43127 -H 0.0.0.0"
+    environment:
+      NEXT_PUBLIC_API_URL: http://127.0.0.1:8080
+    ports: ["43127:43127"]
+    depends_on: [gateway]
