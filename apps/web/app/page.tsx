@@ -10,10 +10,10 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
+import { AdvisorTooltip } from "@/components/advisor-tooltip";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
 import {
   api,
   type Benchmarks,
@@ -40,9 +40,6 @@ export default function Home() {
   const [news, setNews] = useState<NewsFeed | null>(null);
   const [sentiment, setSentiment] = useState<Sentiment[]>([]);
   const [history, setHistory] = useState<{ t: string; equity: number; nifty: number }[]>([]);
-  const [chat, setChat] = useState("");
-  const [replies, setReplies] = useState<{ q: string; a: string }[]>([]);
-  const [chatBusy, setChatBusy] = useState(false);
 
   const refresh = useCallback(async () => {
     try {
@@ -123,21 +120,6 @@ export default function Home() {
     }
   }
 
-  async function sendChat() {
-    if (!chat.trim()) return;
-    setChatBusy(true);
-    const q = chat.trim();
-    setChat("");
-    try {
-      const r = await api.chat(q);
-      setReplies((xs) => [...xs, { q, a: r.reply }]);
-    } catch {
-      setReplies((xs) => [...xs, { q, a: "Advisor unavailable — is the gateway up?" }]);
-    } finally {
-      setChatBusy(false);
-    }
-  }
-
   const positions = useMemo(
     () => (portfolio?.positions || []).filter((p) => p.qty > 0),
     [portfolio]
@@ -156,7 +138,8 @@ export default function Home() {
             Nifty 500, Sensex, and top-fund peers — a target, not a promise.
           </p>
         </div>
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <AdvisorTooltip sentiment={sentiment} />
           <Button onClick={start} disabled={busy}>
             {campaign?.active ? "Restart 30-day campaign" : "Start 30-day campaign"}
           </Button>
@@ -389,7 +372,7 @@ export default function Home() {
         </Card>
       </div>
 
-      <div className="mt-5 grid gap-5 lg:grid-cols-2">
+      <div className="mt-5">
         <Card>
           <CardHeader>
             <CardTitle>Tape</CardTitle>
@@ -406,45 +389,6 @@ export default function Home() {
                   </p>
                 </div>
               ))
-            )}
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>Advisor</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="mb-3 max-h-48 space-y-2 overflow-auto">
-              {replies.length === 0 && (
-                <Empty>Ask why a name is tilted, or how we score excess vs Nifty.</Empty>
-              )}
-              {replies.map((r, i) => (
-                <div key={i} className="text-sm">
-                  <p className="font-medium text-stone-800">{r.q}</p>
-                  <p className="text-stone-600">{r.a}</p>
-                </div>
-              ))}
-            </div>
-            <div className="flex gap-2">
-              <Input
-                value={chat}
-                placeholder="Message the desk…"
-                onChange={(e) => setChat(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && sendChat()}
-              />
-              <Button onClick={sendChat} disabled={chatBusy}>
-                Send
-              </Button>
-            </div>
-            {sentiment.length > 0 && (
-              <p className="mt-3 text-[11px] text-stone-500">
-                Sentiment rollup:{" "}
-                {sentiment
-                  .slice(0, 6)
-                  .map((s) => `${s.symbol} ${s.label}`)
-                  .join(" · ")}
-              </p>
             )}
           </CardContent>
         </Card>
