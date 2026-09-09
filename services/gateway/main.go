@@ -43,7 +43,11 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 }
 
 func (a *api) handle(w http.ResponseWriter, r *http.Request) {
-	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
+	timeout := 15 * time.Second
+	if r.URL.Path == "/backtest" {
+		timeout = 90 * time.Second
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), timeout)
 	defer cancel()
 	switch r.URL.Path {
 	case "/health":
@@ -132,6 +136,33 @@ func (a *api) handle(w http.ResponseWriter, r *http.Request) {
 		w.Write(b)
 	case "/weights":
 		resp, err := a.ln.GetWeights(ctx, &learningv1.GetWeightsRequest{})
+		if err != nil {
+			http.Error(w, err.Error(), 502)
+			return
+		}
+		b, _ := marshaler.Marshal(resp)
+		w.Header().Set("Content-Type", "application/json")
+		w.Write(b)
+	case "/backtest":
+		if r.Method == http.MethodPost {
+			var body struct {
+				Years int32 `json:"years"`
+			}
+			_ = json.NewDecoder(r.Body).Decode(&body)
+			if body.Years == 0 {
+				body.Years = 5
+			}
+			resp, err := a.ln.RunBacktest(ctx, &learningv1.RunBacktestRequest{Years: body.Years})
+			if err != nil {
+				http.Error(w, err.Error(), 502)
+				return
+			}
+			b, _ := marshaler.Marshal(resp)
+			w.Header().Set("Content-Type", "application/json")
+			w.Write(b)
+			return
+		}
+		resp, err := a.ln.GetBacktest(ctx, &learningv1.GetBacktestRequest{})
 		if err != nil {
 			http.Error(w, err.Error(), 502)
 			return

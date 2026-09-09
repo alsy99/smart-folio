@@ -477,7 +477,14 @@ func (s *server) bestSignal(ctx context.Context, sym string, sent float64, weigh
 	type pack struct {
 		c, h, l []float64
 	}
+	cache := map[string]pack{}
 	load := func(interval string) pack {
+		if interval == "" || interval == "session" {
+			interval = "5m"
+		}
+		if p, ok := cache[interval]; ok {
+			return p
+		}
 		resp, err := s.md.GetBars(ctx, &marketdatav1.GetBarsRequest{Symbol: sym, Interval: interval, Count: 40})
 		if err != nil {
 			return pack{}
@@ -488,21 +495,23 @@ func (s *server) bestSignal(ctx context.Context, sym string, sent float64, weigh
 		for i, b := range resp.Bars {
 			c[i], h[i], l[i] = b.Close, b.High, b.Low
 		}
-		return pack{c, h, l}
+		p := pack{c, h, l}
+		cache[interval] = p
+		return p
 	}
-	p15, p5, p1h, pd := load("15m"), load("5m"), load("1h"), load("1d")
-	sigs := []strategies.Signal{
-		strategies.SMACross(sym, p15.c),
-		strategies.Momentum(sym, p5.c),
-		strategies.MeanRevert(sym, p15.c),
-		strategies.Breakout(sym, p1h.h, p1h.c),
-		strategies.Swing(sym, pd.c),
-		strategies.Sentiment(sym, sent),
-		strategies.OpeningRangeBreak(sym, p5.h, p5.l, p5.c),
+	ids := make([]string, 0, len(weights))
+	for id := range weights {
+		ids = append(ids, id)
+	}
+	if len(ids) == 0 {
+		ids = strategies.IDs()
 	}
 	best := strategies.Signal{}
 	bestScore := -1.0
-	for _, sg := range sigs {
+	for _, id := range ids {
+		spec := strategies.Parse(id)
+		p := load(spec.Timeframe)
+		sg := strategies.Evaluate(spec, sym, strategies.Window{Close: p.c, High: p.h, Low: p.l}, sent)
 		w := weights[sg.StrategyID]
 		sc := sg.Score * (0.3 + w)
 		if sc > bestScore {

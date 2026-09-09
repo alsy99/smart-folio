@@ -10,6 +10,38 @@ service LearningService {
   rpc RecordTrade(RecordTradeRequest) returns (RecordTradeResponse);
   rpc ListJournal(ListJournalRequest) returns (ListJournalResponse);
   rpc GetWeights(GetWeightsRequest) returns (GetWeightsResponse);
+  rpc RunBacktest(RunBacktestRequest) returns (BacktestReport);
+  rpc GetBacktest(GetBacktestRequest) returns (BacktestReport);
+}
+
+message RunBacktestRequest {
+  int32 years = 1;
+}
+
+message GetBacktestRequest {}
+
+message BacktestVariant {
+  string strategy_id = 1;
+  string method = 2;
+  string timeframe = 3;
+  string params = 4;
+  double return_pct = 5;
+  double excess_pct = 6;
+  double win_rate = 7;
+  int32 trades = 8;
+  bool promoted = 9;
+  string lesson = 10;
+}
+
+message BacktestReport {
+  int32 years = 1;
+  int32 variants_tested = 2;
+  int32 variants_promoted = 3;
+  string status = 4;
+  int64 ran_at_unix_ms = 5;
+  double nifty_return_pct = 6;
+  repeated BacktestVariant variants = 7;
+  string note = 8;
 }
 
 message RecordTradeRequest {

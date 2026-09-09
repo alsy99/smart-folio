@@ -22,6 +22,8 @@ const (
 	LearningService_RecordTrade_FullMethodName = "/learning.v1.LearningService/RecordTrade"
 	LearningService_ListJournal_FullMethodName = "/learning.v1.LearningService/ListJournal"
 	LearningService_GetWeights_FullMethodName  = "/learning.v1.LearningService/GetWeights"
+	LearningService_RunBacktest_FullMethodName = "/learning.v1.LearningService/RunBacktest"
+	LearningService_GetBacktest_FullMethodName = "/learning.v1.LearningService/GetBacktest"
 )
 
 // LearningServiceClient is the client API for LearningService service.
@@ -31,6 +33,8 @@ type LearningServiceClient interface {
 	RecordTrade(ctx context.Context, in *RecordTradeRequest, opts ...grpc.CallOption) (*RecordTradeResponse, error)
 	ListJournal(ctx context.Context, in *ListJournalRequest, opts ...grpc.CallOption) (*ListJournalResponse, error)
 	GetWeights(ctx context.Context, in *GetWeightsRequest, opts ...grpc.CallOption) (*GetWeightsResponse, error)
+	RunBacktest(ctx context.Context, in *RunBacktestRequest, opts ...grpc.CallOption) (*BacktestReport, error)
+	GetBacktest(ctx context.Context, in *GetBacktestRequest, opts ...grpc.CallOption) (*BacktestReport, error)
 }
 
 type learningServiceClient struct {
@@ -71,6 +75,26 @@ func (c *learningServiceClient) GetWeights(ctx context.Context, in *GetWeightsRe
 	return out, nil
 }
 
+func (c *learningServiceClient) RunBacktest(ctx context.Context, in *RunBacktestRequest, opts ...grpc.CallOption) (*BacktestReport, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(BacktestReport)
+	err := c.cc.Invoke(ctx, LearningService_RunBacktest_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *learningServiceClient) GetBacktest(ctx context.Context, in *GetBacktestRequest, opts ...grpc.CallOption) (*BacktestReport, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(BacktestReport)
+	err := c.cc.Invoke(ctx, LearningService_GetBacktest_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // LearningServiceServer is the server API for LearningService service.
 // All implementations must embed UnimplementedLearningServiceServer
 // for forward compatibility.
@@ -78,6 +102,8 @@ type LearningServiceServer interface {
 	RecordTrade(context.Context, *RecordTradeRequest) (*RecordTradeResponse, error)
 	ListJournal(context.Context, *ListJournalRequest) (*ListJournalResponse, error)
 	GetWeights(context.Context, *GetWeightsRequest) (*GetWeightsResponse, error)
+	RunBacktest(context.Context, *RunBacktestRequest) (*BacktestReport, error)
+	GetBacktest(context.Context, *GetBacktestRequest) (*BacktestReport, error)
 	mustEmbedUnimplementedLearningServiceServer()
 }
 
@@ -96,6 +122,12 @@ func (UnimplementedLearningServiceServer) ListJournal(context.Context, *ListJour
 }
 func (UnimplementedLearningServiceServer) GetWeights(context.Context, *GetWeightsRequest) (*GetWeightsResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetWeights not implemented")
+}
+func (UnimplementedLearningServiceServer) RunBacktest(context.Context, *RunBacktestRequest) (*BacktestReport, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method RunBacktest not implemented")
+}
+func (UnimplementedLearningServiceServer) GetBacktest(context.Context, *GetBacktestRequest) (*BacktestReport, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetBacktest not implemented")
 }
 func (UnimplementedLearningServiceServer) mustEmbedUnimplementedLearningServiceServer() {}
 func (UnimplementedLearningServiceServer) testEmbeddedByValue()                         {}
@@ -172,6 +204,42 @@ func _LearningService_GetWeights_Handler(srv interface{}, ctx context.Context, d
 	return interceptor(ctx, in, info, handler)
 }
 
+func _LearningService_RunBacktest_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RunBacktestRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(LearningServiceServer).RunBacktest(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: LearningService_RunBacktest_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(LearningServiceServer).RunBacktest(ctx, req.(*RunBacktestRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _LearningService_GetBacktest_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetBacktestRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(LearningServiceServer).GetBacktest(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: LearningService_GetBacktest_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(LearningServiceServer).GetBacktest(ctx, req.(*GetBacktestRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // LearningService_ServiceDesc is the grpc.ServiceDesc for LearningService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -190,6 +258,14 @@ var LearningService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetWeights",
 			Handler:    _LearningService_GetWeights_Handler,
+		},
+		{
+			MethodName: "RunBacktest",
+			Handler:    _LearningService_RunBacktest_Handler,
+		},
+		{
+			MethodName: "GetBacktest",
+			Handler:    _LearningService_GetBacktest_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

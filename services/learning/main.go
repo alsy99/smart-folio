@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"math"
 	"net"
@@ -12,6 +13,7 @@ import (
 
 	commonv1 "aperture/go/gen/common/v1"
 	learningv1 "aperture/go/gen/learning/v1"
+	"aperture/pkg/backtest"
 	"aperture/pkg/strategies"
 
 	"google.golang.org/grpc"
@@ -22,6 +24,8 @@ type server struct {
 	mu      sync.Mutex
 	journal []*commonv1.JournalEntry
 	stats   map[string]*stat
+	roster  []string
+	report  *learningv1.BacktestReport
 }
 
 type stat struct {
@@ -32,10 +36,16 @@ type stat struct {
 
 func newServer() *server {
 	st := map[string]*stat{}
-	for _, id := range strategies.IDs() {
+	roster := strategies.IDs()
+	for _, id := range roster {
 		st[id] = &stat{}
 	}
-	return &server{stats: st}
+	s := &server{stats: st, roster: roster}
+	go func() {
+		_, _ = s.RunBacktest(context.Background(), &learningv1.RunBacktestRequest{Years: 5})
+		log.Printf("seeded 5-year backtest roster")
+	}()
+	return s
 }
 
 func (s *server) RecordTrade(ctx context.Context, req *learningv1.RecordTradeRequest) (*learningv1.RecordTradeResponse, error) {
@@ -84,9 +94,11 @@ func (s *server) ListJournal(ctx context.Context, req *learningv1.ListJournalReq
 func (s *server) GetWeights(ctx context.Context, _ *learningv1.GetWeightsRequest) (*learningv1.GetWeightsResponse, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	ids := strategies.IDs()
+	ids := s.roster
+	if len(ids) == 0 {
+		ids = strategies.IDs()
+	}
 	raw := make([]float64, len(ids))
-	var weights []*commonv1.StrategyWeight
 	sum := 0.0
 	for i, id := range ids {
 		st := s.stats[id]
@@ -97,32 +109,110 @@ func (s *server) GetWeights(ctx context.Context, _ *learningv1.GetWeightsRequest
 		if st.n > 0 {
 			wr = float64(st.wins) / float64(st.n)
 		}
-		exp := st.excEMA
-		score := math.Exp(3 * (exp*10 + (wr - 0.5)))
+		score := math.Exp(3 * (st.excEMA*10 + (wr - 0.5)))
 		if score < 0.15 {
 			score = 0.15
 		}
 		raw[i] = score
 		sum += score
-		_ = wr
 	}
+	if sum == 0 {
+		sum = 1
+	}
+	var weights []*commonv1.StrategyWeight
 	for i, id := range ids {
 		st := s.stats[id]
 		wr := 0.5
-		n := 0
-		if st != nil {
-			n = st.n
-			if n > 0 {
-				wr = float64(st.wins) / float64(n)
-			}
+		regime := "mixed"
+		if st != nil && st.n > 0 {
+			wr = float64(st.wins) / float64(st.n)
 		}
-		w := raw[i] / sum
+		if st != nil && st.excEMA != 0 {
+			regime = "backtest-fit"
+		}
 		weights = append(weights, &commonv1.StrategyWeight{
-			StrategyId: id, Weight: w, Expectancy: stSafe(st), WinRate: wr, Regime: "mixed",
+			StrategyId: id, Weight: raw[i] / sum, Expectancy: stSafe(st), WinRate: wr, Regime: regime,
 		})
 	}
 	sort.Slice(weights, func(i, j int) bool { return weights[i].Weight > weights[j].Weight })
 	return &learningv1.GetWeightsResponse{Weights: weights}, nil
+}
+
+func (s *server) RunBacktest(ctx context.Context, req *learningv1.RunBacktestRequest) (*learningv1.BacktestReport, error) {
+	years := int(req.Years)
+	if years <= 0 {
+		years = 5
+	}
+	s.mu.Lock()
+	s.report = &learningv1.BacktestReport{Years: int32(years), Status: "running"}
+	s.mu.Unlock()
+	rep := backtest.Run(years, time.Now())
+	out := toProto(rep)
+	s.mu.Lock()
+	s.applyBacktest(rep)
+	s.report = out
+	s.mu.Unlock()
+	return out, nil
+}
+
+func (s *server) GetBacktest(ctx context.Context, _ *learningv1.GetBacktestRequest) (*learningv1.BacktestReport, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.report == nil {
+		return &learningv1.BacktestReport{
+			Status: "idle",
+			Note:   "Run a 5-year backtest to promote new methods and timeframes.",
+		}, nil
+	}
+	return s.report, nil
+}
+
+func (s *server) applyBacktest(rep backtest.Report) {
+	var roster []string
+	for _, v := range rep.Variants {
+		if !v.Promoted {
+			continue
+		}
+		roster = append(roster, v.Spec.ID)
+		s.stats[v.Spec.ID] = &stat{
+			n: v.Trades, wins: v.Wins, pnlEMA: v.ReturnPct, excEMA: v.ExcessPct / 100,
+		}
+	}
+	if len(roster) > 0 {
+		s.roster = roster
+	}
+}
+
+func toProto(rep backtest.Report) *learningv1.BacktestReport {
+	var shown []backtest.Variant
+	for _, v := range rep.Variants {
+		if v.Promoted {
+			shown = append(shown, v)
+		}
+	}
+	for _, v := range rep.Variants {
+		if len(shown) >= 18 {
+			break
+		}
+		if !v.Promoted {
+			shown = append(shown, v)
+		}
+	}
+	var vs []*learningv1.BacktestVariant
+	for _, v := range shown {
+		vs = append(vs, &learningv1.BacktestVariant{
+			StrategyId: v.Spec.ID, Method: v.Spec.Method, Timeframe: v.Spec.Timeframe,
+			Params:    fmt.Sprintf("fast=%d slow=%d lookback=%d", v.Spec.Fast, v.Spec.Slow, v.Spec.Lookback),
+			ReturnPct: v.ReturnPct, ExcessPct: v.ExcessPct, WinRate: v.WinRate,
+			Trades: int32(v.Trades), Promoted: v.Promoted, Lesson: v.Lesson,
+		})
+	}
+	return &learningv1.BacktestReport{
+		Years: int32(rep.Years), VariantsTested: int32(rep.VariantsTested),
+		VariantsPromoted: int32(rep.VariantsPromoted), Status: rep.Status,
+		RanAtUnixMs: rep.RanAt.UnixMilli(), NiftyReturnPct: rep.NiftyReturnPct,
+		Variants: vs, Note: rep.Note,
+	}
 }
 
 func stSafe(st *stat) float64 {

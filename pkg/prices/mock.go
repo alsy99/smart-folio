@@ -74,6 +74,8 @@ func Bars(symbol, interval string, count int, now time.Time) []struct {
 		step = time.Hour
 	case "1d":
 		step = 24 * time.Hour
+	case "1w":
+		step = 7 * 24 * time.Hour
 	}
 	out := make([]struct {
 		Ts     time.Time

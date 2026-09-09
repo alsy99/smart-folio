@@ -16,6 +16,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   api,
+  type BacktestReport,
   type Benchmarks,
   type Campaign,
   type Investigations,
@@ -40,10 +41,12 @@ export default function Home() {
   const [news, setNews] = useState<NewsFeed | null>(null);
   const [sentiment, setSentiment] = useState<Sentiment[]>([]);
   const [history, setHistory] = useState<{ t: string; equity: number; nifty: number }[]>([]);
+  const [backtest, setBacktest] = useState<BacktestReport | null>(null);
+  const [btBusy, setBtBusy] = useState(false);
 
   const refresh = useCallback(async () => {
     try {
-      const [p, c, b, j, inv, n, s] = await Promise.all([
+      const [p, c, b, j, inv, n, s, bt] = await Promise.all([
         api.portfolio(),
         api.campaign(),
         api.benchmarks(),
@@ -51,6 +54,7 @@ export default function Home() {
         api.investigations(),
         api.news(),
         api.sentiment(),
+        api.backtest(),
       ]);
       setPortfolio(p);
       setCampaign(c);
@@ -59,6 +63,7 @@ export default function Home() {
       setInvestigations(inv);
       setNews(n);
       setSentiment(s.scores || []);
+      setBacktest(bt);
       setErr(null);
       const nifty = b.benchmarks?.find((x) => x.id === "NIFTY50");
       setHistory((h) => {
@@ -110,6 +115,19 @@ export default function Home() {
     }
   }
 
+  async function runBacktest() {
+    setBtBusy(true);
+    try {
+      const r = await api.runBacktest(5);
+      setBacktest(r);
+      await refresh();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "backtest failed");
+    } finally {
+      setBtBusy(false);
+    }
+  }
+
   async function resume() {
     setBusy(true);
     try {
@@ -140,6 +158,9 @@ export default function Home() {
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <AdvisorTooltip sentiment={sentiment} />
+          <Button variant="outline" onClick={runBacktest} disabled={btBusy}>
+            {btBusy ? "Backtesting 5y…" : "Run 5-year backtest"}
+          </Button>
           <Button onClick={start} disabled={busy}>
             {campaign?.active ? "Restart 30-day campaign" : "Start 30-day campaign"}
           </Button>
@@ -311,6 +332,63 @@ export default function Home() {
                   </div>
                 </div>
               ))
+            )}
+          </CardContent>
+        </Card>
+      </div>
+
+      <div className="mt-5">
+        <Card>
+          <CardHeader className="flex flex-col gap-1 md:flex-row md:items-start md:justify-between">
+            <div>
+              <CardTitle>5-year method lab</CardTitle>
+              <p className="text-xs text-stone-500">
+                {backtest?.status === "complete"
+                  ? `${backtest.variantsTested} variants · ${backtest.variantsPromoted} promoted · Nifty ${pct(backtest.niftyReturnPct)}`
+                  : backtest?.status === "running"
+                    ? "Backtest running…"
+                    : "Searches methods and timeframes on a 5-year weekday mock tape, then seeds the live roster."}
+              </p>
+            </div>
+            <Badge tone={backtest?.status === "complete" ? "teal" : "neutral"}>
+              {backtest?.status || "idle"}
+            </Badge>
+          </CardHeader>
+          <CardContent>
+            {!backtest?.variants?.length ? (
+              <Empty>Run the 5-year backtest to invent and rank new strategy frames.</Empty>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-sm">
+                  <thead className="text-[11px] uppercase tracking-wide text-stone-500">
+                    <tr>
+                      <th className="py-2">Method</th>
+                      <th>Frame</th>
+                      <th>Excess vs Nifty</th>
+                      <th>Win</th>
+                      <th>Trades</th>
+                      <th></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {backtest.variants.map((v) => (
+                      <tr key={v.strategyId} className="border-t border-stone-100">
+                        <td className="py-2 font-medium">{v.method}</td>
+                        <td>{v.timeframe}</td>
+                        <td className={`num ${v.excessPct >= 0 ? "text-emerald-800" : "text-rose-800"}`}>
+                          {pct(v.excessPct)}
+                        </td>
+                        <td className="num">{Math.round((v.winRate || 0) * 100)}%</td>
+                        <td className="num">{v.trades}</td>
+                        <td>
+                          {v.promoted ? <Badge tone="good">live</Badge> : <Badge>lab</Badge>}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                {backtest.note && <p className="mt-3 text-[11px] text-stone-500">{backtest.note}</p>}
+              </div>
             )}
           </CardContent>
         </Card>

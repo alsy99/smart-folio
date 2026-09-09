@@ -10,6 +10,7 @@ This is educational software. It is **not** financial advice. It does **not** gu
 - Multi-strategy book (momentum, SMA cross, mean-reversion, breakout, swing, ORB, sentiment tilt)
 - Parallel **news investigations** (NewsAPI, Currents, Finnhub — mocked without keys) that tilt those strategies
 - Learning journal after every closed fill (helped vs hurt Nifty → evolving weights)
+- **5-year backtest lab** across methods and timeframes; winners are promoted into the live roster
 - Benchmark table: Nifty 50, Nifty 500, Sensex, large-cap / flexi-cap MF **peer proxies**
 
 Live INDstocks order routing is **off**. Optional quote keys can be added later.

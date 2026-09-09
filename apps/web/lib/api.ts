@@ -6,14 +6,21 @@ async function get<T>(path: string): Promise<T> {
   return r.json();
 }
 
-async function post<T>(path: string, body?: unknown): Promise<T> {
-  const r = await fetch(`${API}${path}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body ?? {}),
-  });
-  if (!r.ok) throw new Error(`${path} ${r.status}`);
-  return r.json();
+async function post<T>(path: string, body?: unknown, timeoutMs = 20000): Promise<T> {
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), timeoutMs);
+  try {
+    const r = await fetch(`${API}${path}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body ?? {}),
+      signal: ctrl.signal,
+    });
+    if (!r.ok) throw new Error(`${path} ${r.status}`);
+    return r.json();
+  } finally {
+    clearTimeout(t);
+  }
 }
 
 export const api = {
@@ -30,6 +37,8 @@ export const api = {
   news: () => get<NewsFeed>("/news"),
   investigations: () => get<Investigations>("/investigations"),
   chat: (message: string) => post<{ reply: string; mode: string }>("/advisor/chat", { message }),
+  backtest: () => get<BacktestReport>("/backtest"),
+  runBacktest: (years = 5) => post<BacktestReport>("/backtest", { years }, 90000),
 };
 
 export type Position = {
@@ -173,4 +182,28 @@ export type Investigations = {
   workersMax: number;
   lastRefreshUnixMs: string | number;
   mode: string;
+};
+
+export type BacktestVariant = {
+  strategyId: string;
+  method: string;
+  timeframe: string;
+  params: string;
+  returnPct: number;
+  excessPct: number;
+  winRate: number;
+  trades: number;
+  promoted: boolean;
+  lesson: string;
+};
+
+export type BacktestReport = {
+  years: number;
+  variantsTested: number;
+  variantsPromoted: number;
+  status: string;
+  ranAtUnixMs: string | number;
+  niftyReturnPct: number;
+  variants: BacktestVariant[];
+  note: string;
 };
