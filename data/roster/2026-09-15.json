@@ -1,13 +1,6 @@
 {
   "date": "2026-09-15",
-  "roster": [
-    "sentiment_tilt",
-    "breakout_1d",
-    "swing_daily",
-    "sma_cross_1d",
-    "mean_reversion_1d",
-    "momentum_1d"
-  ],
+  "roster": [],
   "added": [],
   "failing": [
     "sentiment_tilt",
@@ -20,6 +13,6 @@
   "folds": 2,
   "tape": "indstocks-1d",
   "days": 1240,
-  "gitSha": "37bbcc9d137088824598fc2aec2b3b8ff4a24237",
-  "note": "Walk-forward OOS gate: excess\u003e0 vs Nifty AND return\u003e0, both net of delivery costs, ≥30 OOS trades, maxDD≤15%. At most 2 new admissions per weekly snapshot. Defaults stay on the roster; the ones failing the gate on this tape are listed under failing."
+  "gitSha": "fbf3032281ae023708343d1e4222c585f321590d-dirty",
+  "note": "Walk-forward OOS gate: excess\u003e0 vs Nifty AND return\u003e0, both net of delivery costs, ≥30 OOS trades, maxDD≤15%. At most 2 new admissions per weekly snapshot. roster trades; failing are shipped defaults that missed the gate on this tape and get weight 0 on the paper book."
 }
