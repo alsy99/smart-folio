@@ -6,37 +6,32 @@ import (
 	"sort"
 	"time"
 
+	"aperture/pkg/costs"
 	"aperture/pkg/prices"
 	"aperture/pkg/strategies"
 	"aperture/pkg/universe"
 )
 
-const (
-	commissionBps = 5.0
-	slippageBps   = 4.0
-	startCash     = 1_000_000.0
-)
-
 type Variant struct {
-	Spec       strategies.Spec
-	ReturnPct  float64
-	ExcessPct  float64
-	WinRate    float64
-	Trades     int
-	Wins       int
-	Promoted   bool
-	Lesson     string
+	Spec      strategies.Spec
+	ReturnPct float64
+	ExcessPct float64
+	WinRate   float64
+	Trades    int
+	Wins      int
+	Promoted  bool
+	Lesson    string
 }
 
 type Report struct {
-	Years           int
-	VariantsTested  int
+	Years            int
+	VariantsTested   int
 	VariantsPromoted int
-	Status          string
-	RanAt           time.Time
-	NiftyReturnPct  float64
-	Variants        []Variant
-	Note            string
+	Status           string
+	RanAt            time.Time
+	NiftyReturnPct   float64
+	Variants         []Variant
+	Note             string
 }
 
 func tradingDays(end time.Time, years int) []time.Time {
@@ -85,7 +80,7 @@ func simulate(spec strategies.Spec, closes []float64, nifty []float64) Variant {
 	if spec.Timeframe == "1d" || spec.Timeframe == "1h" {
 		hold = 7
 	}
-	cash := startCash
+	cash := costs.StartCash
 	qty := 0.0
 	entry := 0.0
 	entryI := 0
@@ -103,9 +98,9 @@ func simulate(spec strategies.Spec, closes []float64, nifty []float64) Variant {
 		sig := strategies.Evaluate(spec, "BT", w, 0)
 		px := closes[i]
 		if qty > 0 && (sig.Direction <= 0 || i-entryI >= hold) {
-			exit := px * (1 - slippageBps/1e4)
+			exit := costs.SellFill(px)
 			proceeds := qty * exit
-			cash += proceeds * (1 - commissionBps/1e4)
+			cash += proceeds - costs.Commission(proceeds)
 			pnl := (exit - entry) * qty
 			pnlSum += pnl
 			trades++
@@ -115,7 +110,7 @@ func simulate(spec strategies.Spec, closes []float64, nifty []float64) Variant {
 			qty = 0
 		}
 		if qty == 0 && sig.Direction > 0 && sig.Score >= 0.25 {
-			fill := px * (1 + slippageBps/1e4)
+			fill := costs.BuyFill(px)
 			notional := cash * 0.2
 			if notional > cash*0.9 {
 				notional = cash * 0.9
@@ -124,7 +119,7 @@ func simulate(spec strategies.Spec, closes []float64, nifty []float64) Variant {
 			if q < 1 {
 				continue
 			}
-			cost := q * fill * (1 + commissionBps/1e4)
+			cost := q*fill + costs.Commission(q*fill)
 			if cost > cash {
 				continue
 			}
@@ -136,8 +131,8 @@ func simulate(spec strategies.Spec, closes []float64, nifty []float64) Variant {
 	}
 	if qty > 0 {
 		px := closes[len(closes)-1]
-		exit := px * (1 - slippageBps/1e4)
-		cash += qty * exit * (1 - commissionBps/1e4)
+		exit := costs.SellFill(px)
+		cash += qty*exit - costs.Commission(qty*exit)
 		pnl := (exit - entry) * qty
 		pnlSum += pnl
 		trades++
@@ -145,7 +140,7 @@ func simulate(spec strategies.Spec, closes []float64, nifty []float64) Variant {
 			wins++
 		}
 	}
-	ret := cash/startCash - 1
+	ret := cash/costs.StartCash - 1
 	nRet := 0.0
 	if len(nifty) > 0 && nifty[0] > 0 {
 		nRet = nifty[len(nifty)-1]/nifty[0] - 1

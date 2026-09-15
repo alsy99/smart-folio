@@ -2,7 +2,7 @@ syntax = "proto3";
 
 package advisor.v1;
 
-option go_package = "aperture/go/gen/advisor/v1;advisorv1";
+option go_package = "aperture/gen/advisor/v1;advisorv1";
 
 service AdvisorService {
   rpc Chat(ChatRequest) returns (ChatResponse);

@@ -8,6 +8,15 @@ import (
 	"aperture/pkg/universe"
 )
 
+type Bar struct {
+	Ts     time.Time
+	Open   float64
+	High   float64
+	Low    float64
+	Close  float64
+	Volume float64
+}
+
 func Hash(s string) uint32 {
 	h := fnv.New32a()
 	_, _ = h.Write([]byte(s))
@@ -35,7 +44,7 @@ func Last(symbol string, now time.Time) float64 {
 		drift = 0.000031
 	}
 	wave := math.Sin(t/17.0+seed*6.28)*0.012 + math.Sin(t/41.0+seed)*0.006
-	tickNoise := math.Sin(t*1.7+seed*3)*0.004
+	tickNoise := math.Sin(t*1.7+seed*3) * 0.004
 	day := float64(now.Unix()/60) * drift
 	px := inst.BasePrice * (1 + wave + tickNoise + day)
 	if px < 1 {
@@ -53,14 +62,7 @@ func ChangePct(symbol string, now time.Time) float64 {
 	return (cur/prev - 1) * 100
 }
 
-func Bars(symbol, interval string, count int, now time.Time) []struct {
-	Ts     time.Time
-	Open   float64
-	High   float64
-	Low    float64
-	Close  float64
-	Volume float64
-} {
+func Bars(symbol, interval string, count int, now time.Time) []Bar {
 	if count <= 0 {
 		count = 40
 	}
@@ -77,28 +79,19 @@ func Bars(symbol, interval string, count int, now time.Time) []struct {
 	case "1w":
 		step = 7 * 24 * time.Hour
 	}
-	out := make([]struct {
-		Ts     time.Time
-		Open   float64
-		High   float64
-		Low    float64
-		Close  float64
-		Volume float64
-	}, count)
+	out := make([]Bar, count)
 	for i := 0; i < count; i++ {
 		ts := now.Add(-time.Duration(count-1-i) * step)
 		c := Last(symbol, ts)
 		o := Last(symbol, ts.Add(-step/2))
-		hi := math.Max(o, c) * (1 + 0.003)
-		lo := math.Min(o, c) * (1 - 0.003)
-		out[i] = struct {
-			Ts     time.Time
-			Open   float64
-			High   float64
-			Low    float64
-			Close  float64
-			Volume float64
-		}{Ts: ts, Open: o, High: hi, Low: lo, Close: c, Volume: 1e6 + float64(Hash(symbol+ts.String())%500000)}
+		out[i] = Bar{
+			Ts:     ts,
+			Open:   o,
+			High:   math.Max(o, c) * (1 + 0.003),
+			Low:    math.Min(o, c) * (1 - 0.003),
+			Close:  c,
+			Volume: 1e6 + float64(Hash(symbol+ts.String())%500000),
+		}
 	}
 	return out
 }

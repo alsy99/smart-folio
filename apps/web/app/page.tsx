@@ -1,6 +1,5 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Area,
   AreaChart,
@@ -11,137 +10,37 @@ import {
   YAxis,
 } from "recharts";
 import { AdvisorTooltip } from "@/components/advisor-tooltip";
+import { Empty, Hero } from "@/components/desk/hero";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import {
-  api,
-  type BacktestReport,
-  type Benchmarks,
-  type Campaign,
-  type Investigations,
-  type Journal,
-  type NewsFeed,
-  type Portfolio,
-  type Sentiment,
-} from "@/lib/api";
+import { useDesk } from "@/hooks/use-desk";
 import { inr, pct } from "@/lib/utils";
 
-const POLL_MS = 4000;
-
 export default function Home() {
-  const [err, setErr] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [busy, setBusy] = useState(false);
-  const [portfolio, setPortfolio] = useState<Portfolio | null>(null);
-  const [campaign, setCampaign] = useState<Campaign | null>(null);
-  const [benchmarks, setBenchmarks] = useState<Benchmarks | null>(null);
-  const [journal, setJournal] = useState<Journal | null>(null);
-  const [investigations, setInvestigations] = useState<Investigations | null>(null);
-  const [news, setNews] = useState<NewsFeed | null>(null);
-  const [sentiment, setSentiment] = useState<Sentiment[]>([]);
-  const [history, setHistory] = useState<{ t: string; equity: number; nifty: number }[]>([]);
-  const [backtest, setBacktest] = useState<BacktestReport | null>(null);
-  const [btBusy, setBtBusy] = useState(false);
-
-  const refresh = useCallback(async () => {
-    try {
-      const [p, c, b, j, inv, n, s, bt] = await Promise.all([
-        api.portfolio(),
-        api.campaign(),
-        api.benchmarks(),
-        api.journal(),
-        api.investigations(),
-        api.news(),
-        api.sentiment(),
-        api.backtest(),
-      ]);
-      setPortfolio(p);
-      setCampaign(c);
-      setBenchmarks(b);
-      setJournal(j);
-      setInvestigations(inv);
-      setNews(n);
-      setSentiment(s.scores || []);
-      setBacktest(bt);
-      setErr(null);
-      const nifty = b.benchmarks?.find((x) => x.id === "NIFTY50");
-      setHistory((h) => {
-        const next = [
-          ...h,
-          {
-            t: new Date().toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", second: "2-digit" }),
-            equity: p.equity,
-            nifty: nifty ? nifty.start * (1 + nifty.returnPct / 100) : 0,
-          },
-        ];
-        return next.slice(-24);
-      });
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : "gateway unreachable");
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    refresh();
-    const id = setInterval(refresh, POLL_MS);
-    return () => clearInterval(id);
-  }, [refresh]);
-
-  const nifty = benchmarks?.benchmarks?.find((x) => x.id === "NIFTY50");
-  const onTrack = Boolean(nifty?.onTrack);
-
-  async function start() {
-    setBusy(true);
-    try {
-      await api.startCampaign(30);
-      await refresh();
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : "start failed");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function kill() {
-    setBusy(true);
-    try {
-      await api.setAutopilot(false);
-      await refresh();
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function runBacktest() {
-    setBtBusy(true);
-    try {
-      const r = await api.runBacktest(5);
-      setBacktest(r);
-      await refresh();
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : "backtest failed");
-    } finally {
-      setBtBusy(false);
-    }
-  }
-
-  async function resume() {
-    setBusy(true);
-    try {
-      await api.setAutopilot(true);
-      await refresh();
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  const positions = useMemo(
-    () => (portfolio?.positions || []).filter((p) => p.qty > 0),
-    [portfolio]
-  );
+  const {
+    err,
+    loading,
+    busy,
+    btBusy,
+    portfolio,
+    campaign,
+    benchmarks,
+    journal,
+    investigations,
+    news,
+    picks,
+    sentiment,
+    history,
+    backtest,
+    nifty,
+    onTrack,
+    positions,
+    start,
+    kill,
+    resume,
+    runBacktest,
+  } = useDesk();
 
   return (
     <div className="mx-auto max-w-[1400px] px-4 py-6 md:px-8 md:py-10">
@@ -152,8 +51,9 @@ export default function Home() {
             Aperture
           </h1>
           <p className="mt-2 max-w-xl text-sm text-stone-600">
-            Parallel news investigations tilt a multi-strategy book. Success is excess versus Nifty 50,
-            Nifty 500, Sensex, and top-fund peers — a target, not a promise.
+            Parallel news investigations and strategy plans run around the clock. Paper fills
+            only during NSE hours (09:15–15:30 IST). Excess versus Nifty 50, Nifty 500, Sensex,
+            and top-fund peers is a target, not a promise.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -222,13 +122,17 @@ export default function Home() {
               <CardTitle>Book versus Indian tape</CardTitle>
               <p className="text-xs text-stone-500">Equity overlay vs Nifty mock path this session</p>
             </div>
-            <Badge tone={campaign?.clockOverride ? "warn" : "teal"}>
-              {campaign?.clockOverride ? "clock override" : "live IST clock"}
+            <Badge tone={campaign?.clockOverride ? "warn" : campaign?.marketOpen ? "teal" : "warn"}>
+              {campaign?.clockOverride
+                ? "clock override"
+                : campaign?.marketOpen
+                  ? "NSE open · fills on"
+                  : "NSE closed · research on"}
             </Badge>
           </CardHeader>
           <CardContent className="h-64">
             {history.length < 2 ? (
-              <Empty>Start the campaign — the curve fills as ticks land.</Empty>
+              <Empty>Paper fills land during NSE hours (09:15–15:30 IST). Research still runs overnight.</Empty>
             ) : (
               <ResponsiveContainer width="100%" height="100%">
                 <AreaChart data={history}>
@@ -288,8 +192,8 @@ export default function Home() {
             {!investigations?.reports?.length ? (
               <Empty>No material clusters yet — mock tape appears after the sentiment service boots.</Empty>
             ) : (
-              investigations.reports.map((r) => (
-                <article key={r.id} className="rounded-xl border border-stone-200 bg-stone-50/70 p-3">
+              investigations.reports.map((r, i) => (
+                <article key={`${r.id}-${i}`} className="rounded-xl border border-stone-200 bg-stone-50/70 p-3">
                   <div className="mb-1 flex flex-wrap items-center gap-2">
                     <Badge tone={r.stance === "bullish" ? "good" : r.stance === "bearish" ? "bad" : "neutral"}>
                       {r.stance}
@@ -299,7 +203,8 @@ export default function Home() {
                     {r.standAside && <Badge tone="warn">stand aside</Badge>}
                   </div>
                   <p className="text-sm font-medium text-stone-900">{r.headline}</p>
-                  <p className="mt-1 text-xs text-stone-600">{r.thesis}</p>
+                  <p className="mt-1 whitespace-pre-wrap text-xs text-stone-600">{r.thesis}</p>
+                  {r.risks && <p className="mt-1 text-[11px] text-stone-500">{r.risks}</p>}
                   <p className="mt-1 text-[11px] text-stone-500">
                     {(r.symbols || []).join(", ")} · {r.horizon} · tilts{" "}
                     {(r.strategyImplications || [])
@@ -331,6 +236,41 @@ export default function Home() {
                     <div className="h-full bg-teal-700" style={{ width: `${Math.min(100, w.weight * 100)}%` }} />
                   </div>
                 </div>
+              ))
+            )}
+          </CardContent>
+        </Card>
+      </div>
+
+      <div className="mt-5">
+        <Card>
+          <CardHeader>
+            <CardTitle>Pick research</CardTitle>
+            <p className="text-xs text-stone-500">
+              Fundamental card plus computed technicals, with LLM reasoning when a name is selected for the book.
+            </p>
+          </CardHeader>
+          <CardContent className="grid gap-3 md:grid-cols-2">
+            {!picks.length ? (
+              <Empty>Waiting for the planner to select names (signal score ≥ 0.25).</Empty>
+            ) : (
+              picks.map((p) => (
+                <article key={p.symbol} className="rounded-xl border border-stone-200 bg-stone-50/70 p-3">
+                  <div className="mb-1 flex flex-wrap items-center gap-2">
+                    <span className="text-sm font-medium text-stone-900">{p.symbol}</span>
+                    <Badge tone={p.stance === "bullish" ? "good" : p.stance === "bearish" ? "bad" : "neutral"}>
+                      {p.stance}
+                    </Badge>
+                    <Badge tone="teal">{p.mode}</Badge>
+                    {p.strategyId && <Badge>{p.strategyId}</Badge>}
+                  </div>
+                  <p className="text-sm text-stone-800">{p.conclusion}</p>
+                  <p className="mt-2 text-[11px] uppercase tracking-wide text-stone-500">Technical</p>
+                  <p className="text-xs text-stone-600">{p.technical}</p>
+                  <p className="mt-2 text-[11px] uppercase tracking-wide text-stone-500">Fundamental</p>
+                  <p className="text-xs text-stone-600">{p.fundamental}</p>
+                  {p.risks && <p className="mt-2 text-[11px] text-stone-500">{p.risks}</p>}
+                </article>
               ))
             )}
           </CardContent>
@@ -401,7 +341,7 @@ export default function Home() {
           </CardHeader>
           <CardContent>
             {positions.length === 0 ? (
-              <Empty>Autopilot has not opened names yet — wait a tick or start the campaign.</Empty>
+              <Empty>No open names yet — fills wait for NSE hours; overnight is research only.</Empty>
             ) : (
               <div className="overflow-x-auto">
                 <table className="w-full text-left text-sm">
@@ -478,32 +418,4 @@ export default function Home() {
       </footer>
     </div>
   );
-}
-
-function Hero({
-  label,
-  value,
-  sub,
-  tone,
-}: {
-  label: string;
-  value: string;
-  sub: string;
-  tone?: "good" | "bad" | "warn";
-}) {
-  const color =
-    tone === "good" ? "text-emerald-800" : tone === "bad" ? "text-rose-800" : "text-stone-900";
-  return (
-    <Card>
-      <CardContent className="pt-5">
-        <p className="text-[11px] uppercase tracking-[0.18em] text-stone-500">{label}</p>
-        <p className={`num mt-1 font-[family-name:var(--font-display)] text-2xl ${color}`}>{value}</p>
-        <p className="mt-1 text-xs text-stone-500">{sub}</p>
-      </CardContent>
-    </Card>
-  );
-}
-
-function Empty({ children }: { children: React.ReactNode }) {
-  return <p className="text-sm text-stone-500">{children}</p>;
 }

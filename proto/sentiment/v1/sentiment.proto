@@ -2,7 +2,7 @@ syntax = "proto3";
 
 package sentiment.v1;
 
-option go_package = "aperture/go/gen/sentiment/v1;sentimentv1";
+option go_package = "aperture/gen/sentiment/v1;sentimentv1";
 
 import "proto/common/v1/types.proto";
 

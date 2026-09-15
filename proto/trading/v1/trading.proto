@@ -2,7 +2,7 @@ syntax = "proto3";
 
 package trading.v1;
 
-option go_package = "aperture/go/gen/trading/v1;tradingv1";
+option go_package = "aperture/gen/trading/v1;tradingv1";
 
 import "proto/common/v1/types.proto";
 

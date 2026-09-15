@@ -2,7 +2,7 @@ syntax = "proto3";
 
 package common.v1;
 
-option go_package = "aperture/go/gen/common/v1;commonv1";
+option go_package = "aperture/gen/common/v1;commonv1";
 
 message Quote {
   string symbol = 1;

@@ -38,7 +38,6 @@ services:
       MARKETDATA_ADDR: "marketdata:9081"
       LEARNING_ADDR: "learning:9083"
       SENTIMENT_ADDR: "sentiment:9084"
-      MARKET_CLOCK_OVERRIDE: "open"
       AUTOSTART_CAMPAIGN: "true"
     ports: ["9082:9082"]
     depends_on: [marketdata, learning, sentiment]

@@ -1,7 +1,6 @@
-.PHONY: proto tidy backend web dev-backend
+.PHONY: proto tidy test backend web dev-backend
 
 export PATH := $(PATH):$(HOME)/go/bin
-export MARKET_CLOCK_OVERRIDE ?= open
 export AUTOSTART_CAMPAIGN ?= true
 export NEXT_PUBLIC_API_URL ?= http://127.0.0.1:8080
 
@@ -18,6 +17,9 @@ proto:
 
 tidy:
 	go mod tidy
+
+test:
+	go test ./...
 
 dev-backend:
 	bash scripts/dev-backend.sh

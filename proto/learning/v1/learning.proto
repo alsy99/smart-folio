@@ -2,7 +2,7 @@ syntax = "proto3";
 
 package learning.v1;
 
-option go_package = "aperture/go/gen/learning/v1;learningv1";
+option go_package = "aperture/gen/learning/v1;learningv1";
 
 import "proto/common/v1/types.proto";
 

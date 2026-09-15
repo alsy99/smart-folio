@@ -53,20 +53,20 @@ func EquitySymbols() []string {
 
 func Keywords(symbol string) []string {
 	m := map[string][]string{
-		"RELIANCE":    {"reliance", "ril", "mukesh ambani", "jio", "jamnagar"},
-		"TCS":         {"tcs", "tata consultancy", "tata"},
-		"HDFCBANK":    {"hdfc bank", "hdfc"},
-		"INFY":        {"infosys", "infy", "nandan nilekani"},
-		"ICICIBANK":   {"icici", "icici bank"},
-		"SBIN":        {"sbi", "state bank"},
-		"BHARTIARTL":  {"airtel", "bharti"},
-		"ITC":         {"itc limited", "itc"},
-		"LT":          {"larsen", "l&t", "larsen & toubro"},
-		"KOTAKBANK":   {"kotak"},
-		"AXISBANK":    {"axis bank"},
-		"HINDUNILVR":  {"hul", "unilever", "hindustan unilever"},
-		"NIFTY50":     {"nifty", "nse"},
-		"SENSEX":      {"sensex", "bse"},
+		"RELIANCE":   {"reliance", "ril", "mukesh ambani", "jio", "jamnagar"},
+		"TCS":        {"tcs", "tata consultancy", "tata"},
+		"HDFCBANK":   {"hdfc bank", "hdfc"},
+		"INFY":       {"infosys", "infy", "nandan nilekani"},
+		"ICICIBANK":  {"icici", "icici bank"},
+		"SBIN":       {"sbi", "state bank"},
+		"BHARTIARTL": {"airtel", "bharti"},
+		"ITC":        {"itc limited", "itc"},
+		"LT":         {"larsen", "l&t", "larsen & toubro"},
+		"KOTAKBANK":  {"kotak"},
+		"AXISBANK":   {"axis bank"},
+		"HINDUNILVR": {"hul", "unilever", "hindustan unilever"},
+		"NIFTY50":    {"nifty", "nse"},
+		"SENSEX":     {"sensex", "bse"},
 	}
 	return m[symbol]
 }
