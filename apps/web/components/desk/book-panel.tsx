@@ -11,6 +11,7 @@ import {
 } from "recharts";
 import { Empty } from "@/components/desk/hero";
 import type { useDesk } from "@/hooks/use-desk";
+import { CORE_STAYS_INVESTED, coreInvested, coreRows, rebalanceLine } from "@/lib/core";
 import { mockTape } from "@/lib/tape";
 import { NO_CORE_YET, SATELLITE_EMPTY, SATELLITE_EMPTY_WHY, satelliteEmpty } from "@/lib/satellite";
 import { fillAllowed } from "@/lib/session";
@@ -156,14 +157,55 @@ export function BookPanel({ desk }: { desk: ReturnType<typeof useDesk> }) {
         </section>
       ) : null}
 
+      {desk.ips && (
+        <section data-testid="book-core">
+          <div className="flex flex-col gap-1 md:flex-row md:items-baseline md:justify-between">
+            <h2 className="scroll-mt-6 text-lg font-semibold tracking-tight">Core versus target</h2>
+            <p className="text-sm text-steel">{rebalanceLine(desk.targets, desk.ips.rebalance)}</p>
+          </div>
+          <p className="mt-1 text-sm text-steel">
+            {CORE_STAYS_INVESTED} Invested {pct(coreInvested(desk.targets).actual * 100)} of a{" "}
+            {pct(coreInvested(desk.targets).target * 100)} target after the name and sector caps.
+          </p>
+          {coreRows(desk.targets).length === 0 ? (
+            <Empty>Core targets appear once the policy service has marked the book.</Empty>
+          ) : (
+            <div className="mt-3 overflow-x-auto">
+              <table className="w-full min-w-[32rem] text-left text-sm">
+                <thead className="text-steel">
+                  <tr>
+                    <th className="py-2 font-medium">Name</th>
+                    <th className="font-medium">Target</th>
+                    <th className="font-medium">Held</th>
+                    <th className="font-medium">Drift</th>
+                    <th className="font-medium">Next session</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {coreRows(desk.targets).map((c) => (
+                    <tr key={c.symbol} className="border-t border-rule">
+                      <td className="py-2 font-medium">{c.symbol}</td>
+                      <td className="num">{pct(c.target * 100)}</td>
+                      <td className="num">{pct(c.actual * 100)}</td>
+                      <td className={`num ${Math.abs(c.drift) > 0.01 ? "text-brass" : "text-steel"}`}>{pct(c.drift * 100)}</td>
+                      <td>{c.ticket ? "ticket" : "inside band"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
+      )}
+
       <section>
         <h2 className="scroll-mt-6 text-lg font-semibold tracking-tight">Holdings</h2>
         <div className="mt-3">
-          {positions.length === 0 && satEmpty ? (
+          {positions.length === 0 && satEmpty && !desk.ips ? (
             <div data-testid="book-satellite-empty" className="border border-brass/40 bg-paper px-4 py-3 text-sm">
               <p className="font-semibold">{SATELLITE_EMPTY}</p>
               <p className="mt-1 text-steel">
-                {SATELLITE_EMPTY_WHY} {NO_CORE_YET}
+                {SATELLITE_EMPTY_WHY} {desk.ips ? CORE_STAYS_INVESTED : NO_CORE_YET}
                 {desk.portfolio ? ` Cash ${inr(desk.portfolio.cash)}.` : ""}
               </p>
             </div>

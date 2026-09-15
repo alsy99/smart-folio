@@ -12,6 +12,8 @@ import (
 	"math"
 	"sort"
 	"strings"
+
+	"aperture/pkg/universe"
 )
 
 type Goal string
@@ -160,6 +162,11 @@ func Default(id string, startCash float64) IPS {
 		Rebalance: RebalanceMonthly, StartCash: startCash, FoldSatellite: true,
 	}
 }
+
+// CoreSymbols is the v1 core universe: the twelve campaign names. The
+// allocator in pkg/core owns the weights; this only names the set so a
+// caller can ask for marks/ADV without importing the allocator.
+func (p IPS) CoreSymbols() []string { return universe.EquitySymbols() }
 
 // Line is the one-line desk summary.
 func (p IPS) Line() string {

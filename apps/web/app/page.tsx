@@ -75,7 +75,7 @@ function DeskShell() {
     satEmpty && !satelliteEmpty(portfolio?.weights)
       ? (pub?.manifest.failing ?? []).map((id) => ({ strategyId: id, weight: 0, expectancy: 0, winRate: 0, regime: "failing-gate" }))
       : portfolio?.weights,
-    false,
+    Boolean(desk.ips),
   );
   const niftyHero = isMock ? heroExcess(health, nifty?.excessPct) : lastDay ? pct(lastDay.excessNifty50Pct) : nifty ? pct(nifty.excessPct) : "—";
 

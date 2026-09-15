@@ -10,9 +10,11 @@ import (
 	marketdatav1 "aperture/gen/marketdata/v1"
 	sentimentv1 "aperture/gen/sentiment/v1"
 	tradingv1 "aperture/gen/trading/v1"
+	"aperture/internal/policy"
 	"aperture/pkg/broker"
 	"aperture/pkg/config"
 	"aperture/pkg/costs"
+	"aperture/pkg/ips"
 	"aperture/pkg/live"
 	"aperture/pkg/llm"
 	"aperture/pkg/research"
@@ -46,6 +48,9 @@ type Deps struct {
 	Log        *slog.Logger
 	Now        func() time.Time
 	Cfg        Config
+	// IPS binds the book to a policy at construction (replays). The live
+	// desk binds through BindIPS when a statement is put.
+	IPS *ips.IPS
 }
 
 type Service struct {
@@ -81,6 +86,17 @@ type Service struct {
 	dayKey       string
 	dayBuys      float64
 	dayCapLogged bool
+	// Core sleeve under the bound IPS. Policy decides the tickets
+	// (internal/policy.Rebalance); this service only executes them.
+	ips           *ips.IPS
+	coreQty       map[string]float64
+	coreLastRebal string
+	corePending   bool
+	coreLogKey    string
+	coreHaltLog   bool
+	lastCoreFills int
+	lastSatFills  int
+	lastCorePlan  policy.Plan
 }
 
 type campaign struct {
@@ -113,7 +129,7 @@ func New(d Deps) *Service {
 		"live_orders", live.OrdersMode(),
 		"live_ready", live.Ready(),
 	)
-	return &Service{
+	s := &Service{
 		md: d.MarketData, ln: d.Learning, sn: d.Sentiment, llm: d.LLM,
 		log: log, now: now, cfg: d.Cfg,
 		cash: costs.StartCash, eq0: costs.StartCash, peak: costs.StartCash,
@@ -123,11 +139,44 @@ func New(d Deps) *Service {
 		beatN:      map[string]int{},
 		desk:       broker.NewPaper(log),
 		inv:        research.NewDesk(""),
+		coreQty:    map[string]float64{},
 	}
+	if d.IPS != nil {
+		s.BindIPS(*d.IPS)
+	}
+	return s
 }
 
 func (s *Service) SeedWeights(weights []*commonv1.StrategyWeight) {
 	s.mu.Lock()
 	s.w = weights
 	s.mu.Unlock()
+}
+
+// BindIPS puts the book under a statement. The core builds at the next
+// open session and rebalances on the statement's calendar. Re-binding a
+// different hash restarts the calendar; the same hash is a no-op.
+func (s *Service) BindIPS(p ips.IPS) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.ips != nil && s.ips.Hash() == p.Hash() {
+		return
+	}
+	cp := p
+	s.ips = &cp
+	s.coreLastRebal = ""
+	s.corePending = false
+	s.coreHaltLog = false
+	s.log.Info("IPS_BOUND", "id", p.ID, "hash", p.Hash(), "line", p.Line(), "halt_at", broker.HaltThreshold(broker.Snapshot{HaltAt: p.MaxDD}))
+}
+
+// IPS returns the bound statement, if any.
+func (s *Service) IPS() *ips.IPS {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.ips == nil {
+		return nil
+	}
+	cp := *s.ips
+	return &cp
 }

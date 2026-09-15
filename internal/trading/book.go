@@ -152,10 +152,14 @@ func (s *Service) snapshotLocked() broker.Snapshot {
 			sector[inst.Sector] += p.MarketValue
 		}
 	}
+	haltAt := 0.0
+	if s.ips != nil {
+		haltAt = s.ips.MaxDD
+	}
 	return broker.Snapshot{
 		Equity: eq, Peak: s.peak, Cash: s.cash,
 		Gross: gross, Held: held, Sector: sector,
-		DayBuys: s.dayBuys,
+		DayBuys: s.dayBuys, HaltAt: haltAt,
 	}
 }
 

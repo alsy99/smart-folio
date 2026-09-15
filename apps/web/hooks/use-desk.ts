@@ -16,6 +16,7 @@ import type {
   PickResearch,
   PublicCampaign,
   Sentiment,
+  Targets,
 } from "@/lib/types";
 
 const POLL_MS = 4000;
@@ -39,6 +40,7 @@ export function useDesk() {
   const [pub, setPub] = useState<PublicCampaign | null>(null);
   const [ips, setIPS] = useState<IPS | null>(null);
   const [ipsMissing, setIPSMissing] = useState(false);
+  const [targets, setTargets] = useState<Targets | null>(null);
 
   const refresh = useCallback(async () => {
     try {
@@ -74,9 +76,11 @@ export function useDesk() {
         const cur = await api.ips(id).catch(() => null);
         setIPS(cur);
         setIPSMissing(!cur);
+        setTargets(cur ? await api.previewTargets(id).catch(() => null) : null);
       } else {
         setIPS(null);
         setIPSMissing(true);
+        setTargets(null);
       }
       if (pubCamp?.days?.length) {
         setHistory(
@@ -202,6 +206,7 @@ export function useDesk() {
     runBacktest,
     ips,
     ipsMissing,
+    targets,
     saveIPS,
   };
 }

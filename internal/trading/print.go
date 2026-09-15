@@ -12,6 +12,8 @@ import (
 type BookPrint struct {
 	Equity, Peak, Cash, Turnover float64
 	Fills                        int
+	CoreFills, SatelliteFills    int
+	Core, Satellite              float64 // market value by sleeve
 	Halted                       bool
 	Last                         map[string]float64
 	BenchStart                   map[string]float64
@@ -21,6 +23,7 @@ func (s *Service) ResetTickStats() {
 	s.mu.Lock()
 	s.lastTurnover = 0
 	s.lastFills = 0
+	s.lastCoreFills, s.lastSatFills = 0, 0
 	s.mu.Unlock()
 }
 
@@ -47,14 +50,22 @@ func (s *Service) Print(ctx context.Context) (BookPrint, error) {
 	s.updateMarksLocked(last)
 	snap := s.snapshotLocked()
 	ddHalt := costs.BookHalted(snap.Equity, snap.Peak)
+	core := 0.0
+	for sym, q := range s.coreQty {
+		core += q * last[sym]
+	}
 	return BookPrint{
-		Equity:     snap.Equity,
-		Peak:       snap.Peak,
-		Cash:       snap.Cash,
-		Turnover:   s.lastTurnover,
-		Fills:      s.lastFills,
-		Halted:     broker.Halted(snap) || ddHalt,
-		Last:       last,
-		BenchStart: copyFloatMap(s.benchStart),
+		Equity:         snap.Equity,
+		Peak:           snap.Peak,
+		Cash:           snap.Cash,
+		Turnover:       s.lastTurnover,
+		Fills:          s.lastFills,
+		CoreFills:      s.lastCoreFills,
+		SatelliteFills: s.lastSatFills,
+		Core:           core,
+		Satellite:      snap.Gross - core,
+		Halted:         broker.Halted(snap) || ddHalt,
+		Last:           last,
+		BenchStart:     copyFloatMap(s.benchStart),
 	}, nil
 }

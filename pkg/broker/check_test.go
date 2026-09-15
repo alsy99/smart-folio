@@ -110,6 +110,54 @@ func TestNoAddWhenHaltedSellsStillPass(t *testing.T) {
 	}
 }
 
+// TestCalendarTicketSkipsOnlyTheCashSlice: a core rebalance ticket may take
+// more than 8% of cash in one go, but every other rail still binds.
+func TestCalendarTicketSkipsOnlyTheCashSlice(t *testing.T) {
+	s := Snapshot{Equity: 1_000_000, Peak: 1_000_000, Cash: 400_000, Gross: 600_000,
+		Held: map[string]float64{}, Sector: map[string]float64{}}
+	// 70k is 17.5% of cash: refused as a signal buy, allowed on the calendar.
+	sig := Check(Intent{Symbol: "RELIANCE", Side: Buy, Qty: 70, Price: 1000}, s)
+	cal := Check(Intent{Symbol: "RELIANCE", Side: Buy, Qty: 70, Price: 1000, Calendar: true}, s)
+	if sig.Allow || !cal.Allow {
+		t.Fatalf("signal %+v calendar %+v", sig, cal)
+	}
+	// Name cap still binds on the calendar.
+	if d := Check(Intent{Symbol: "RELIANCE", Side: Buy, Qty: 90, Price: 1000, Calendar: true}, s); d.Allow || d.Reason != ReasonNameCap {
+		t.Fatalf("name cap must bind: %+v", d)
+	}
+	// Turnover still binds on the calendar.
+	s.DayBuys = 99_000
+	if d := Check(Intent{Symbol: "RELIANCE", Side: Buy, Qty: 10, Price: 1000, Calendar: true}, s); d.Allow || d.Reason != ReasonTurnover {
+		t.Fatalf("turnover must bind: %+v", d)
+	}
+	// Halt still binds on the calendar.
+	s.DayBuys, s.Equity = 0, 840_000
+	if d := Check(Intent{Symbol: "RELIANCE", Side: Buy, Qty: 10, Price: 1000, Calendar: true}, s); d.Allow || d.Reason != ReasonMaxDrawdown {
+		t.Fatalf("halt must bind: %+v", d)
+	}
+}
+
+// TestClientCapTightensNeverLoosens: HaltAt from the IPS is min'd with the
+// 15% book halt. A 10% cap halts at 10%; a 20% "cap" still halts at 15%.
+func TestClientCapTightensNeverLoosens(t *testing.T) {
+	s := Snapshot{Equity: 890_000, Peak: 1_000_000, Cash: 890_000, HaltAt: 0.10}
+	if HaltThreshold(s) != 0.10 || !Halted(s) {
+		t.Fatalf("11%% drawdown must halt under a 10%% cap: thr %.2f", HaltThreshold(s))
+	}
+	buy := Check(Intent{Symbol: "TCS", Side: Buy, Qty: 10, Price: 1000}, s)
+	if buy.Allow || buy.Reason != ReasonMaxDrawdown {
+		t.Fatalf("halted: %+v", buy)
+	}
+	loose := Snapshot{Equity: 840_000, Peak: 1_000_000, Cash: 840_000, HaltAt: 0.20}
+	if HaltThreshold(loose) != costs.DrawdownHalt || !Halted(loose) {
+		t.Fatal("a cap above 15% must not loosen the book halt")
+	}
+	fine := Snapshot{Equity: 950_000, Peak: 1_000_000, Cash: 950_000, HaltAt: 0.10}
+	if Halted(fine) {
+		t.Fatal("5% drawdown is inside a 10% cap")
+	}
+}
+
 func TestPeakToTroughNotStart(t *testing.T) {
 	// Book is up from 1L start, then dumps 15% off the peak.
 	s := Snapshot{Equity: 1_020_000, Peak: 1_200_000, Cash: 1_020_000}

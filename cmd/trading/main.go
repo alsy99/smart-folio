@@ -44,11 +44,23 @@ func main() {
 	}
 	// Policy is hosted on the trading process: one binary, two services.
 	// Policy decides targets; trading executes them.
+	store := policy.NewFileStore(config.String("IPS_DIR", "data/ips"))
 	pol := policy.New(policy.Deps{
-		Store:  policy.NewFileStore(config.String("IPS_DIR", "data/ips")),
+		Store:  store,
 		Frozen: campaign.FrozenIPS,
+		Book:   svc,
+		OnPut:  svc.BindIPS,
 		Log:    slog.Default(),
 	})
+	// Boot under the statement named by IPS_ID, if it is on disk, so a
+	// restart does not silently drop the core.
+	if id := config.String("IPS_ID", ""); id != "" {
+		if p, err := store.Get(id); err == nil {
+			svc.BindIPS(p)
+		} else {
+			slog.Warn("IPS_ID not found; book runs without a core until one is put", "id", id, "err", err)
+		}
+	}
 	if err := serve.GRPC(ctx, cfg.Bind, func(s *grpc.Server) {
 		tradingv1.RegisterTradingServiceServer(s, svc)
 		policyv1.RegisterPolicyServiceServer(s, pol)

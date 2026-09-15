@@ -164,7 +164,7 @@ export function IPSForm({
           className="mt-2 w-full accent-ink"
           aria-label="Max drawdown percent, capped at 15"
         />
-        <span className="text-xs text-steel">Capped at {Math.round(MAX_DD_CAP * 100)}%. Hitting it liquidates to cash until the next rebalance.</span>
+        <span className="text-xs text-steel">Capped at {Math.round(MAX_DD_CAP * 100)}%. Hitting it stops all new buys — core and satellite — until the book recovers.</span>
       </label>
 
       <label className="block text-sm">

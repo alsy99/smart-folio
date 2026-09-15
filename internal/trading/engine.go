@@ -216,6 +216,11 @@ func (s *Service) Execute(ctx context.Context) (*tradingv1.TickResponse, error) 
 	}
 	s.open = remain
 
+	// Core first: policy decides the calendar tickets, this loop executes
+	// them through the same broker and cost model. Then the satellite.
+	coreFills, coreTurnover := s.coreLocked(ctx, now, last)
+	turnover += coreTurnover
+
 	snap := s.snapshotLocked()
 	if broker.Halted(snap) {
 		s.desk.NoteHalt(snap)
@@ -313,6 +318,9 @@ func (s *Service) Execute(ctx context.Context) (*tradingv1.TickResponse, error) 
 
 	s.camp.ticks++
 	s.lastTurnover = turnover
+	s.lastSatFills = fills
+	s.lastCoreFills = coreFills
+	fills += coreFills
 	s.lastFills = fills + closes
 	eq := s.markLocked()
 	rP := excess.PortfolioReturn(eq, s.eq0)
@@ -327,7 +335,7 @@ func (s *Service) Execute(ctx context.Context) (*tradingv1.TickResponse, error) 
 			s.beatWins[b.Symbol]++
 		}
 	}
-	s.log.Info("paper execute", "fills", fills, "closes", closes, "equity", eq)
+	s.log.Info("paper execute", "fills", fills, "core_fills", coreFills, "satellite_fills", s.lastSatFills, "closes", closes, "equity", eq)
 	return &tradingv1.TickResponse{Fills: int32(fills), Closes: int32(closes), Equity: eq}, nil
 }
 

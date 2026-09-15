@@ -21,6 +21,11 @@ type Intent struct {
 	Side   Side
 	Qty    float64
 	Price  float64
+	// Calendar marks a core rebalance ticket to a published target. It is
+	// checked against every rail except the cash-slice rule, which exists
+	// to stop one signal-driven idea taking a quarter of the cash. Min-hold
+	// is likewise satellite-only (MayExit is never consulted for core).
+	Calendar bool
 }
 
 func (in Intent) Notional() float64 {
@@ -42,6 +47,18 @@ type Snapshot struct {
 	// DayBuys is new-buy notional already filled in the current IST session.
 	// Check refuses a buy that would push it past costs.TurnoverCapDay × Equity.
 	DayBuys float64
+	// HaltAt is the client's drawdown cap from the IPS. Zero means the
+	// book default. The effective halt is min(costs.DrawdownHalt, HaltAt):
+	// a client may ask for less pain, never more.
+	HaltAt float64
+}
+
+// HaltThreshold is the peak-to-trough drawdown that stops new buys.
+func HaltThreshold(s Snapshot) float64 {
+	if s.HaltAt > 0 && s.HaltAt < costs.DrawdownHalt {
+		return s.HaltAt
+	}
+	return costs.DrawdownHalt
 }
 
 // TurnoverRoom is the new-buy notional still allowed this session.
@@ -88,9 +105,13 @@ func (s Snapshot) sectorHeld(sym string) float64 {
 	return s.Sector[inst.Sector]
 }
 
-// Halted is a 15% peak-to-trough drawdown. New buys are refused; sells still pass.
+// Halted is a peak-to-trough drawdown at or past HaltThreshold (15% book
+// default, or the client's tighter cap). New buys are refused; sells pass.
 func Halted(s Snapshot) bool {
-	return costs.BookHalted(s.Equity, s.Peak)
+	if s.Peak <= 0 {
+		return false
+	}
+	return Drawdown(s) >= HaltThreshold(s)
 }
 
 func Drawdown(s Snapshot) float64 {
@@ -134,7 +155,11 @@ func Check(in Intent, s Snapshot) Decision {
 	if notional > TurnoverRoom(s)+1e-6 {
 		return deny(ReasonTurnover)
 	}
-	if room := Room(s, in.Symbol); notional > room+1e-6 {
+	room := Room(s, in.Symbol)
+	if in.Calendar {
+		room = RailRoom(s, in.Symbol)
+	}
+	if notional > room+1e-6 {
 		return deny(breach(s, in.Symbol, notional))
 	}
 	return allow()
@@ -162,6 +187,22 @@ func breach(s Snapshot, sym string, notional float64) string {
 
 // Room is the largest buy notional the rails allow for symbol right now.
 func Room(s Snapshot, symbol string) float64 {
+	room := RailRoom(s, symbol)
+	if slice := s.Cash * CashSlice; slice < room {
+		room = slice
+	}
+	if room < 1 {
+		return 0
+	}
+	return room
+}
+
+// RailRoom is Room without the cash-slice rule: exactly the rails Check
+// enforces (halt, name, gross, cash buffer, sector, turnover). Calendar
+// rebalance tickets to a published core target size against this — a
+// rebalance is not one idea taking a quarter of the cash, which is what
+// CashSlice guards against on signal-driven satellite buys.
+func RailRoom(s Snapshot, symbol string) float64 {
 	if Halted(s) || s.Equity <= 0 {
 		return 0
 	}
@@ -171,9 +212,6 @@ func Room(s Snapshot, symbol string) float64 {
 	}
 	if c := s.Cash - s.Equity*CashBuffer; c < room {
 		room = c
-	}
-	if slice := s.Cash * CashSlice; slice < room {
-		room = slice
 	}
 	if sec := s.Equity*SectorCap - s.sectorHeld(symbol); sec < room {
 		room = sec

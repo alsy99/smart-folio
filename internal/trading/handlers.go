@@ -87,6 +87,11 @@ func (s *Service) StartCampaign(ctx context.Context, req *tradingv1.StartCampaig
 	s.beatN = map[string]int{}
 	s.lastTurnover = 0
 	s.lastFills = 0
+	s.lastCoreFills, s.lastSatFills = 0, 0
+	s.coreQty = map[string]float64{}
+	s.coreLastRebal = ""
+	s.corePending = false
+	s.coreHaltLog = false
 	s.mu.Unlock()
 	s.captureBenchStart(ctx)
 	s.log.Info("campaign started", "days", days)
