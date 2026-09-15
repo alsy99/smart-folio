@@ -13,7 +13,7 @@ import { Button } from "@/components/ui/button";
 import { useDesk } from "@/hooks/use-desk";
 import { inr, istStamp, pct, shortSha } from "@/lib/utils";
 import { mockTape } from "@/lib/tape";
-import { heroExcess, heroTape } from "@/lib/hero";
+import { campaignTapeHint, heroExcess, heroTape } from "@/lib/hero";
 import { rosterIsDefault, rosterLine } from "@/lib/roster";
 import { fillAllowed } from "@/lib/session";
 
@@ -181,8 +181,13 @@ function DeskShell() {
               role="status"
               className="mt-6 border border-ink/15 bg-paper px-4 py-3 text-sm text-ink"
             >
-              Public 30-day paper campaign is frozen. Same SHA, settings, universe, and delivery cost model.
-              Reproduce with <span className="font-mono text-xs">{pub.manifest.reproduce}</span>.
+              Public 30-day paper campaign is frozen on {pub.manifest.tape}. Same SHA, settings, universe, and
+              delivery cost model. Roster as-of {pub.manifest.rosterAsOf ?? "—"}:{" "}
+              {pub.manifest.roster?.length ? pub.manifest.roster.join(", ") : "none cleared the gate"}
+              {pub.manifest.failing?.length
+                ? ` · failing at weight 0: ${pub.manifest.failing.join(", ")}`
+                : ""}
+              . Reproduce with <span className="font-mono text-xs">{pub.manifest.reproduce}</span>.
             </div>
           )}
 
@@ -265,8 +270,8 @@ function DeskShell() {
               hint={
                 isMock
                   ? tape.hint
-                  : frozen
-                    ? "Deterministic prices.Last. Clone the SHA to replay."
+                  : frozen && pub
+                    ? campaignTapeHint(pub.manifest)
                     : open && fillAllowed(campaign)
                       ? "INDstocks tape, positional fills"
                       : campaign?.clockOverride

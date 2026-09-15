@@ -21,8 +21,11 @@ export function LabPanel({ desk }: { desk: ReturnType<typeof useDesk> }) {
               (portfolio?.weights || []).map((w) => (
                 <div key={w.strategyId} className="min-w-0">
                   <div className="mb-1 flex justify-between gap-3 text-sm">
-                    <span className="min-w-0 truncate" title={w.strategyId}>
-                      {w.strategyId}
+                    <span className="flex min-w-0 items-center gap-2">
+                      <span className="min-w-0 truncate" title={w.strategyId}>
+                        {w.strategyId}
+                      </span>
+                      {w.regime === "failing-gate" && <Badge tone="bad">failing gate · weight 0</Badge>}
                     </span>
                     <span className="num shrink-0">{(w.weight * 100).toFixed(1)}%</span>
                   </div>

@@ -21,13 +21,15 @@ type Promotion struct {
 // The trading book never uses "whatever won last night": it boots from the
 // latest snapshot file, and a backtest run writes at most one file per day.
 type RosterSnapshot struct {
-	Date   string      `json:"date"` // YYYY-MM-DD (IST run date)
+	Date string `json:"date"` // YYYY-MM-DD (IST run date)
+	// Roster is the set that trades: everything that cleared the gate on
+	// this tape. It may be empty — then the paper book holds cash.
 	Roster []string    `json:"roster"`
 	Added  []Promotion `json:"added"` // new admissions this snapshot (≤ MaxNewPerSnap)
-	// Failing lists shipped defaults that did not clear the gate on this
-	// tape. They stay on the roster (the book is the vetted spec, not last
-	// night's winner) but the file says so out loud.
-	Failing []string `json:"failing,omitempty"`
+	// Failing lists shipped defaults that missed the gate on this tape.
+	// They are off the roster and carry weight 0 on the paper book until a
+	// later snapshot readmits them. Listed so the file says it out loud.
+	Failing []string `json:"failing"`
 	Folds   int      `json:"folds"`
 	Tape    string   `json:"tape"`   // "indstocks-1d" | "bhavcopy" — never "mock"
 	Days    int      `json:"days"`   // daily closes the folds ran on
@@ -42,8 +44,8 @@ func SaveRoster(dir string, snap RosterSnapshot) (string, error) {
 	if snap.Date == "" {
 		return "", fmt.Errorf("roster snapshot has no date")
 	}
-	if len(snap.Roster) == 0 {
-		return "", fmt.Errorf("roster snapshot has empty roster")
+	if len(snap.Roster) == 0 && len(snap.Failing) == 0 {
+		return "", fmt.Errorf("roster snapshot judged nothing")
 	}
 	if IsMockTape(snap.Tape) {
 		return "", fmt.Errorf("roster snapshot from the %q tape is not promotable; run the lab on real daily bars", snap.Tape)
@@ -85,8 +87,11 @@ func LoadLatestRoster(dir string) (RosterSnapshot, string, error) {
 	if err := json.Unmarshal(b, &snap); err != nil {
 		return RosterSnapshot{}, "", err
 	}
-	if len(snap.Roster) == 0 {
-		return RosterSnapshot{}, "", fmt.Errorf("roster snapshot %s is empty", path)
+	if len(snap.Roster) == 0 && len(snap.Failing) == 0 {
+		return RosterSnapshot{}, "", fmt.Errorf("roster snapshot %s judged nothing", path)
+	}
+	if IsMockTape(snap.Tape) {
+		return RosterSnapshot{}, "", fmt.Errorf("roster snapshot %s is from the %q tape; not admissible", path, snap.Tape)
 	}
 	return snap, path, nil
 }

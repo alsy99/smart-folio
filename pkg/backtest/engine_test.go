@@ -1,6 +1,7 @@
 package backtest
 
 import (
+	"math"
 	"path/filepath"
 	"testing"
 	"time"
@@ -80,7 +81,7 @@ func TestRunProducesDatedSnapshot(t *testing.T) {
 	if _, err := SaveRoster(t.TempDir(), snap); err == nil {
 		t.Fatal("SaveRoster must refuse a mock-tape snapshot")
 	}
-	// every default spec ships on the roster
+	// on the mock tape (plumbing check) every default spec ships on the roster
 	for _, d := range strategies.DefaultSpecs() {
 		found := false
 		for _, id := range snap.Roster {
@@ -101,6 +102,81 @@ func TestRunProducesDatedSnapshot(t *testing.T) {
 		if !passesGate(byID[p.ID]) {
 			t.Fatalf("admission %s failed the gate: %+v", p.ID, byID[p.ID])
 		}
+	}
+}
+
+// stubRealTape is a deterministic non-mock tape: a drifting, oscillating
+// price so methods trade, without being the sine wave the mock uses.
+type stubRealTape struct{}
+
+func (stubRealTape) Name() string { return "stub-real-1d" }
+func (stubRealTape) Days(years int, now time.Time) ([]time.Time, error) {
+	return tradingDays(now, years), nil
+}
+func (stubRealTape) Closes(symbol string, days []time.Time) ([]float64, error) {
+	seed := float64(len(symbol))
+	out := make([]float64, len(days))
+	for i := range days {
+		x := float64(i)
+		out[i] = 1000 * (1 - 0.00015*x) * (1 + 0.06*math.Sin(x/23+seed) + 0.02*math.Sin(x/5+seed*2))
+	}
+	return out, nil
+}
+
+// TestRealTapeSplitsRosterFromFailing: on a real tape a shipped default is
+// not grandfathered. It is on the roster iff it clears the gate; otherwise
+// it is under failing, and the two sets are disjoint. The paper book gives
+// failing weight 0 — otherwise the gate is decoration.
+func TestRealTapeSplitsRosterFromFailing(t *testing.T) {
+	now := time.Date(2026, 9, 15, 12, 0, 0, 0, time.UTC)
+	rep := RunOn(stubRealTape{}, 5, now)
+	if rep.Status != "complete" {
+		t.Fatalf("status %s note %s", rep.Status, rep.Note)
+	}
+	if !rep.Promotable() {
+		t.Fatal("a non-mock tape is promotable")
+	}
+	byID := map[string]Variant{}
+	for _, v := range rep.Variants {
+		byID[v.Spec.ID] = v
+	}
+	on := map[string]bool{}
+	for _, id := range rep.Snapshot.Roster {
+		on[id] = true
+		if !passesGate(byID[id]) {
+			t.Fatalf("%s is on the roster but fails the gate: %+v", id, byID[id])
+		}
+	}
+	for _, id := range rep.Snapshot.Failing {
+		if on[id] {
+			t.Fatalf("%s is both on the roster and failing", id)
+		}
+		if passesGate(byID[id]) {
+			t.Fatalf("%s passes the gate but is listed failing", id)
+		}
+	}
+	for _, d := range strategies.DefaultSpecs() {
+		inFail := false
+		for _, id := range rep.Snapshot.Failing {
+			inFail = inFail || id == d.ID
+		}
+		if on[d.ID] == inFail {
+			t.Fatalf("default %s must be in exactly one of roster/failing (roster=%v failing=%v)", d.ID, on[d.ID], inFail)
+		}
+	}
+	// A snapshot that admits nothing but judged the defaults is still a
+	// valid file: the book holds cash rather than trading unvetted specs.
+	dir := t.TempDir()
+	judged := RosterSnapshot{Date: "2026-09-15", Roster: nil, Failing: []string{"momentum_1d"}, Tape: "stub-real-1d"}
+	if _, err := SaveRoster(dir, judged); err != nil {
+		t.Fatalf("empty roster with failing must save: %v", err)
+	}
+	got, _, err := LoadLatestRoster(dir)
+	if err != nil || len(got.Roster) != 0 || len(got.Failing) != 1 {
+		t.Fatalf("round trip %+v %v", got, err)
+	}
+	if _, err := SaveRoster(dir, RosterSnapshot{Date: "2026-09-16", Tape: "stub-real-1d"}); err == nil {
+		t.Fatal("a snapshot that judged nothing must be refused")
 	}
 }
 

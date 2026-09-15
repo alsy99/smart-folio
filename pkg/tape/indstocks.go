@@ -80,9 +80,10 @@ func (t *INDstocks) bars(symbol string, from, to time.Time) ([]prices.Bar, error
 			var c cached
 			if json.Unmarshal(b, &c) == nil && len(c.Bars) > 0 {
 				first, last := c.Bars[0].Ts, c.Bars[len(c.Bars)-1].Ts
-				// Covered if the cache starts within ~2 weeks of from and ends
-				// within ~1 week of to (holidays and weekends explain the slack).
-				if !first.After(from.Add(14*24*time.Hour)) && !last.Before(to.Add(-7*24*time.Hour)) {
+				// Covered if the cache starts within ~6 weeks of from and ends
+				// within ~1 week of to. The front slack lets an as-of rerun a
+				// few weeks back reuse the same bars instead of refetching.
+				if !first.After(from.Add(45*24*time.Hour)) && !last.Before(to.Add(-7*24*time.Hour)) {
 					return c.Bars, nil
 				}
 			}

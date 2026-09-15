@@ -78,10 +78,29 @@ func TestReplayMatchesPublished(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if want.Manifest.Tape != pub.Tape || want.Manifest.Tape == "mock-deterministic" {
+		t.Fatalf("public campaign must run on %s, ledger says %q", pub.Tape, want.Manifest.Tape)
+	}
+	if want.Manifest.BarsSHA256 != got.Manifest.BarsSHA256 {
+		t.Fatalf("bars.json sha256 %s vs published %s — the tape changed under the ledger", got.Manifest.BarsSHA256, want.Manifest.BarsSHA256)
+	}
 	if want.Manifest.SettingsHash != got.Manifest.SettingsHash {
 		t.Fatalf("settings hash %s vs published %s — freeze is broken", got.Manifest.SettingsHash, want.Manifest.SettingsHash)
 	}
 	if err := pub.MatchEquity(want.Days, got.Days); err != nil {
 		t.Fatal(err)
+	}
+	// The roster the book traded on is the as-of verdict, not today's.
+	if want.Manifest.RosterAsOf != pub.RosterAsOf().Format("2006-01-02") {
+		t.Fatalf("roster as-of %s must be the last session before the window (%s)", want.Manifest.RosterAsOf, pub.RosterAsOf().Format("2006-01-02"))
+	}
+	// Failing defaults carried weight 0: none of them may have filled. With
+	// an empty roster the line is flat cash, and the ledger says so.
+	if len(want.Manifest.Roster) == 0 {
+		for _, d := range want.Days {
+			if d.Fills != 0 || d.Equity != want.Manifest.StartCash {
+				t.Fatalf("empty roster yet %s shows %d fills / equity %.2f", d.Date, d.Fills, d.Equity)
+			}
+		}
 	}
 }

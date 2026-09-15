@@ -217,6 +217,11 @@ export type PublicManifest = {
   costModel: string;
   settingsHash: string;
   universe: string[];
+  fillRule?: string;
+  roster?: string[];
+  failing?: string[];
+  rosterAsOf?: string;
+  barsSha256?: string;
   reproduce: string;
 };
 

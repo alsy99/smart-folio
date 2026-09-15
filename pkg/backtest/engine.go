@@ -346,12 +346,14 @@ func RunOn(tape Tape, years int, now time.Time) Report {
 		defaults[d.ID] = struct{}{}
 	}
 	snap := RosterSnapshot{
-		Date:  now.Format("2006-01-02"),
-		Added: []Promotion{},
-		Folds: len(wins),
-		Tape:  name,
-		Days:  len(days),
-		Note:  "Walk-forward OOS gate: " + GateText + ". At most 2 new admissions per weekly snapshot. Defaults stay on the roster; the ones failing the gate on this tape are listed under failing.",
+		Date:    now.Format("2006-01-02"),
+		Roster:  []string{},
+		Added:   []Promotion{},
+		Failing: []string{},
+		Folds:   len(wins),
+		Tape:    name,
+		Days:    len(days),
+		Note:    "Walk-forward OOS gate: " + GateText + ". At most 2 new admissions per weekly snapshot. roster trades; failing are shipped defaults that missed the gate on this tape and get weight 0 on the paper book.",
 	}
 	if mock {
 		snap.Note = "Mock tape: defaults only, no admissions. Promotion needs real daily bars (INDstocks history or NSE bhavcopy)."
@@ -361,12 +363,16 @@ func RunOn(tape Tape, years int, now time.Time) Report {
 	for i := range variants {
 		v := &variants[i]
 		if _, isDef := defaults[v.Spec.ID]; isDef {
+			// Shipped defaults are not grandfathered. On a real tape a default
+			// that fails the gate leaves the roster and is listed under
+			// failing: the book gives it weight 0 until it clears the bar.
+			if !mock && !passesGate(*v) {
+				snap.Failing = append(snap.Failing, v.Spec.ID)
+				continue
+			}
 			v.Promoted = true
 			promoted++
 			snap.Roster = append(snap.Roster, v.Spec.ID)
-			if !mock && !passesGate(*v) {
-				snap.Failing = append(snap.Failing, v.Spec.ID)
-			}
 			continue
 		}
 		if mock {

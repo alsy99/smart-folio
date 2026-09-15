@@ -42,6 +42,12 @@ type Service struct {
 	mu      sync.Mutex
 	journal []*commonv1.JournalEntry
 	roster  []string
+	// failing are shipped defaults that missed the gate on a real tape.
+	// They are published with weight 0 so the trading book skips them.
+	failing []string
+	// gated is true once a real-tape snapshot has judged the book. Only an
+	// ungated desk (no file) falls back to the shipped daily specs.
+	gated bool
 	// rosterSrc is where the roster came from: a dated snapshot or RosterDefault.
 	rosterSrc string
 	snap      learn.Snapshot
@@ -65,9 +71,11 @@ func NewDir(log *slog.Logger, dir string) *Service {
 	}
 	s := &Service{log: log, dir: dir, now: time.Now, roster: strategies.IDs()}
 	if snap, path, err := backtest.LoadLatestRoster(rosterDir()); err == nil {
-		s.roster = snap.Roster
-		s.rosterSrc = rosterSource(snap, path)
-		log.Info("roster from snapshot", "file", path, "date", snap.Date, "tape", snap.Tape, "names", len(snap.Roster), "added", len(snap.Added), "failing", len(snap.Failing))
+		s.adoptLocked(snap, path)
+		log.Info("roster from snapshot", "file", path, "date", snap.Date, "tape", snap.Tape, "roster", len(snap.Roster), "added", len(snap.Added), "failing", len(snap.Failing))
+		if len(snap.Roster) == 0 {
+			log.Warn("roster is empty — every shipped default failed the gate; the paper book holds cash", "failing", snap.Failing)
+		}
 	} else {
 		s.rosterSrc = RosterDefault
 		log.Warn("roster: no snapshot file — default daily specs", "dir", rosterDir(), "names", len(s.roster), "err", err)
@@ -81,14 +89,33 @@ func NewDir(log *slog.Logger, dir string) *Service {
 // runs the shipped daily specs and says so, rather than implying a lab vetted it.
 const RosterDefault = "default daily specs (no data/roster snapshot)"
 
+// RegimeFailing tags a weight row for a default that missed the gate.
+const RegimeFailing = "failing-gate"
+
 // rosterSource is the one-line provenance shown on the hero.
 func rosterSource(snap backtest.RosterSnapshot, path string) string {
 	tape := snap.Tape
 	if tape == "" {
 		tape = "unknown tape"
 	}
-	return fmt.Sprintf("%s · %s · %d closes · %d admitted · %d defaults failing gate",
-		filepath.ToSlash(path), tape, snap.Days, len(snap.Added), len(snap.Failing))
+	return fmt.Sprintf("%s · %s · %d closes · %d trading · %d admitted · %d failing (weight 0)",
+		filepath.ToSlash(path), tape, snap.Days, len(snap.Roster), len(snap.Added), len(snap.Failing))
+}
+
+// adoptLocked installs a real-tape snapshot: roster trades, failing sit at
+// weight 0, and the desk stops falling back to the shipped defaults.
+func (s *Service) adoptLocked(snap backtest.RosterSnapshot, path string) {
+	var kept []string
+	for _, id := range snap.Roster {
+		if strategies.IDHoldsUnderSession(id) && !config.Bool("SCALP_MODE") {
+			continue
+		}
+		kept = append(kept, id)
+	}
+	s.roster = kept
+	s.failing = append([]string(nil), snap.Failing...)
+	s.gated = true
+	s.rosterSrc = rosterSource(snap, path)
 }
 
 // RosterNote prefixes a report note with the roster provenance line the
@@ -128,8 +155,10 @@ func (s *Service) bootJournal() {
 	}
 }
 
+// ids is the trading set. Once a real tape has judged the book there is no
+// fallback: an empty roster means the book holds cash.
 func (s *Service) ids() []string {
-	if len(s.roster) > 0 {
+	if s.gated || len(s.roster) > 0 {
 		return s.roster
 	}
 	return strategies.IDs()
@@ -138,7 +167,7 @@ func (s *Service) ids() []string {
 func (s *Service) Seed(ctx context.Context) {
 	if snap, path, err := backtest.LoadLatestRoster(rosterDir()); err == nil && !backtest.RosterStale(snap, time.Now(), 7) {
 		s.mu.Lock()
-		s.roster = snap.Roster
+		s.adoptLocked(snap, path)
 		s.mu.Unlock()
 		s.log.Info("roster snapshot is current", "file", path, "date", snap.Date)
 		return
@@ -247,6 +276,11 @@ func (s *Service) GetWeights(_ context.Context, _ *learningv1.GetWeightsRequest)
 			WinRate: row.WinRate, Regime: row.Regime,
 		})
 	}
+	// Failing defaults are published at weight 0 so the book — and the
+	// dashboard — see them for what they are, not silently dropped.
+	for _, id := range s.failing {
+		weights = append(weights, &commonv1.StrategyWeight{StrategyId: id, Weight: 0, Regime: RegimeFailing})
+	}
 	sort.Slice(weights, func(i, j int) bool {
 		if weights[i].Weight == weights[j].Weight {
 			return weights[i].StrategyId < weights[j].StrategyId
@@ -268,18 +302,20 @@ func (s *Service) RunBacktest(ctx context.Context, req *learningv1.RunBacktestRe
 	rep := backtest.RunOn(tp, years, time.Now())
 	s.log.Info("walk-forward", "tape", rep.Tape, "days", rep.TapeDays, "status", rep.Status, "promotable", rep.Promotable())
 	// Only a real tape may touch data/roster/. A mock run reports, and stops.
-	if rep.Promotable() && rep.Snapshot.Date != "" && len(rep.Snapshot.Roster) > 0 {
-		if path, err := backtest.SaveRoster(rosterDir(), rep.Snapshot); err != nil {
+	path := ""
+	if rep.Promotable() && rep.Snapshot.Date != "" {
+		p, err := backtest.SaveRoster(rosterDir(), rep.Snapshot)
+		if err != nil {
 			s.log.Error("roster snapshot", "err", err)
 		} else {
-			s.log.Info("roster snapshot written", "file", path, "tape", rep.Tape, "names", len(rep.Snapshot.Roster), "new", len(rep.Snapshot.Added), "failing", len(rep.Snapshot.Failing))
-			s.mu.Lock()
-			s.rosterSrc = rosterSource(rep.Snapshot, path)
-			s.mu.Unlock()
+			path = p
+			s.log.Info("roster snapshot written", "file", path, "tape", rep.Tape, "roster", len(rep.Snapshot.Roster), "new", len(rep.Snapshot.Added), "failing", len(rep.Snapshot.Failing))
 		}
 	}
 	s.mu.Lock()
-	s.applyBacktest(rep)
+	if path != "" {
+		s.applyBacktest(rep, path)
+	}
 	out := toProto(rep)
 	out.Note = RosterNote(s.rosterSrc, rep.Note)
 	s.report = out
@@ -300,31 +336,13 @@ func (s *Service) GetBacktest(_ context.Context, _ *learningv1.GetBacktestReques
 }
 
 // applyBacktest moves the in-memory roster only on real-tape evidence; a
-// mock run leaves whatever the desk booted with.
-func (s *Service) applyBacktest(rep backtest.Report) {
+// mock run leaves whatever the desk booted with. An empty roster is a
+// result, not an error: the book holds cash.
+func (s *Service) applyBacktest(rep backtest.Report, path string) {
 	if !rep.Promotable() {
 		return
 	}
-	var roster []string
-	if len(rep.Snapshot.Roster) > 0 {
-		roster = append(roster, rep.Snapshot.Roster...)
-	} else {
-		for _, v := range rep.Variants {
-			if v.Promoted {
-				roster = append(roster, v.Spec.ID)
-			}
-		}
-	}
-	var kept []string
-	for _, id := range roster {
-		if strategies.IDHoldsUnderSession(id) && !config.Bool("SCALP_MODE") {
-			continue
-		}
-		kept = append(kept, id)
-	}
-	if len(kept) > 0 {
-		s.roster = kept
-	}
+	s.adoptLocked(rep.Snapshot, path)
 }
 
 func toProto(rep backtest.Report) *learningv1.BacktestReport {

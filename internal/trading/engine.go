@@ -3,6 +3,7 @@ package trading
 import (
 	"context"
 	"math"
+	"sort"
 	"strconv"
 	"time"
 
@@ -102,14 +103,19 @@ func (s *Service) Plan(ctx context.Context) error {
 	copiedW := s.w
 	s.mu.Unlock()
 
+	// baseW is the trading set. Learning publishes failing defaults at
+	// weight 0; they are kept in the map at 0 so a news tilt cannot
+	// resurrect them and bestSignal skips them. Only when learning has
+	// said nothing at all (no weights ever fetched) does the book fall back
+	// to equal weights over the shipped specs.
 	baseW := map[string]float64{}
 	for _, w := range copiedW {
 		if skipSubSession(w.StrategyId) {
 			continue
 		}
-		baseW[w.StrategyId] = w.Weight
+		baseW[w.StrategyId] = math.Max(0, w.Weight)
 	}
-	if len(baseW) == 0 {
+	if copiedW == nil {
 		ids := strategies.IDs()
 		eqw := 1.0 / float64(len(ids))
 		for _, id := range ids {
@@ -117,6 +123,9 @@ func (s *Service) Plan(ctx context.Context) error {
 		}
 	}
 	for id, t := range tilts {
+		if baseW[id] <= 0 {
+			continue // gated out — a headline does not readmit a failing method
+		}
 		baseW[id] = math.Max(0.05, baseW[id]*(1+t))
 	}
 	norm := 0.0
@@ -357,16 +366,16 @@ func (s *Service) bestSignal(ctx context.Context, sym string, sent float64, weig
 		cache[interval] = p
 		return p
 	}
+	// Only methods with weight > 0 may generate a signal. A gated-out
+	// (weight 0) default never trades; an empty set means the book holds cash.
 	ids := make([]string, 0, len(weights))
-	for id := range weights {
-		if skipSubSession(id) {
+	for id, w := range weights {
+		if w <= 0 || skipSubSession(id) {
 			continue
 		}
 		ids = append(ids, id)
 	}
-	if len(ids) == 0 {
-		ids = strategies.IDs()
-	}
+	sort.Strings(ids) // deterministic tie-break across replays
 	best := strategies.Signal{}
 	bestScore := -1.0
 	for _, id := range ids {

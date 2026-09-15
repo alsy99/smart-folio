@@ -9,9 +9,11 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
+	"aperture/pkg/backtest"
 	"aperture/pkg/broker"
 	"aperture/pkg/costs"
 	"aperture/pkg/marketclock"
@@ -19,18 +21,23 @@ import (
 )
 
 const (
-	Name       = "public-30d"
-	Days       = 30
-	Tape       = "mock-deterministic"
-	CostModel  = "delivery-v1"
-	Weights    = "equal"
+	Name = "public-30d"
+	Days = 30
+	// Tape is INDstocks daily history, checked in as bars.json. Fills are
+	// market-on-close at the 15:30 IST tick; a 09:15 quote is the prior close.
+	Tape      = "indstocks-1d"
+	FillRule  = "MOC: one tick per session at 15:30 IST, filled at that session's close"
+	CostModel = "delivery-v1"
+	// Weights: equal across the roster that cleared the gate as-of the last
+	// session before the window; failing defaults at 0. No weekly moves.
+	Weights    = "equal-over-roster, failing=0"
 	DefaultDir = "campaign/public-30d"
 	LedgerFile = "ledger.json"
 	// EquityTolINR is "within rounding" for a clone-and-replay check.
 	EquityTolINR = 1.0
 )
 
-// Window is the frozen 30×24h paper campaign (positional cash, mock tape).
+// Window is the frozen 30×24h paper campaign (positional cash, daily tape).
 func Window() (start, end time.Time) {
 	loc := marketclock.Location()
 	start = time.Date(2026, 8, 17, 9, 15, 0, 0, loc)
@@ -64,7 +71,19 @@ type Manifest struct {
 	MinHoldSessions int      `json:"minHoldSessions"`
 	TurnoverCapDay  float64  `json:"turnoverCapDay"`
 	StartCash       float64  `json:"startCash"`
-	Reproduce       string   `json:"reproduce"`
+	FillRule        string   `json:"fillRule"`
+	// Roster provenance: the gate verdict the book traded on, frozen as-of
+	// the last session before the window. Failing defaults carried weight 0.
+	Roster      []string `json:"roster"`
+	Failing     []string `json:"failing"`
+	RosterAsOf  string   `json:"rosterAsOf"`
+	RosterTape  string   `json:"rosterTape"`
+	RosterDays  int      `json:"rosterDays"`
+	RosterFile  string   `json:"rosterFile"`
+	BarsFile    string   `json:"barsFile"`
+	BarsSHA256  string   `json:"barsSha256"`
+	BarsFetched string   `json:"barsFetchedAt"`
+	Reproduce   string   `json:"reproduce"`
 }
 
 type Day struct {
@@ -86,8 +105,40 @@ type Ledger struct {
 	Days     []Day    `json:"days"`
 }
 
-func NewManifest(gitSHA string, dirty bool) Manifest {
+// Inputs are the checked-in evidence a replay runs on.
+type Inputs struct {
+	Roster     backtest.RosterSnapshot
+	Bars       *Bars
+	BarsSHA256 string
+}
+
+// LoadInputs reads bars.json and roster.json from the campaign directory.
+func LoadInputs(dir string) (Inputs, error) {
+	bars, err := LoadBars(dir)
+	if err != nil {
+		return Inputs{}, fmt.Errorf("bars: %w (maintainers: go run ./cmd/campaign -fetch)", err)
+	}
+	roster, err := LoadRoster(dir)
+	if err != nil {
+		return Inputs{}, fmt.Errorf("roster: %w (maintainers: go run ./cmd/campaign -roster)", err)
+	}
+	sum, err := BarsSHA256(dir)
+	if err != nil {
+		return Inputs{}, err
+	}
+	return Inputs{Roster: roster, Bars: bars, BarsSHA256: sum}, nil
+}
+
+func NewManifest(gitSHA string, dirty bool, in Inputs) Manifest {
 	start, end := Window()
+	roster := append([]string{}, in.Roster.Roster...)
+	failing := append([]string{}, in.Roster.Failing...)
+	sort.Strings(roster)
+	sort.Strings(failing)
+	fetched := ""
+	if in.Bars != nil {
+		fetched = in.Bars.FetchedAt
+	}
 	return Manifest{
 		Name:            Name,
 		Frozen:          true,
@@ -103,9 +154,9 @@ func NewManifest(gitSHA string, dirty bool) Manifest {
 		ScalpMode:       false,
 		Weights:         Weights,
 		CostModel:       CostModel,
-		SettingsHash:    SettingsHash(),
+		SettingsHash:    SettingsHash(roster, failing),
 		Universe:        universe.EquitySymbols(),
-		Benchmarks:      []string{"NIFTY50", "NIFTY500", "SENSEX"},
+		Benchmarks:      Benchmarks,
 		NameCap:         costs.NameCap,
 		GrossCap:        broker.GrossCap,
 		CashBuffer:      broker.CashBuffer,
@@ -114,14 +165,27 @@ func NewManifest(gitSHA string, dirty bool) Manifest {
 		MinHoldSessions: costs.MinHoldSessions,
 		TurnoverCapDay:  costs.TurnoverCapDay,
 		StartCash:       costs.StartCash,
+		FillRule:        FillRule,
+		Roster:          roster,
+		Failing:         failing,
+		RosterAsOf:      in.Roster.Date,
+		RosterTape:      in.Roster.Tape,
+		RosterDays:      in.Roster.Days,
+		RosterFile:      RosterFile,
+		BarsFile:        BarsFile,
+		BarsSHA256:      in.BarsSHA256,
+		BarsFetched:     fetched,
 		Reproduce:       "go run ./cmd/campaign -verify",
 	}
 }
 
-func SettingsHash() string {
+// SettingsHash pins every parameter a replay depends on, including which
+// methods were allowed to trade. The bars are pinned separately by sha256.
+func SettingsHash(roster, failing []string) string {
 	payload := fmt.Sprintf(
-		"tape=%s|cost=%s|weights=%s|scalp=false|llm=false|cash=%.0f|name=%.4f|gross=%.4f|cashbuf=%.4f|sector=%.4f|halt=%.4f|min_hold_sessions=%d|turnover_cap_day=%.4f|max_hold_h=%.0f|stt_buy=%.4f|stt_sell=%.4f|exch=%.6f|sebi=%.6f|stamp=%.4f|gst=%.4f|brokerage=%.2f|adv_base=%.2f|adv_kappa=%.0f|universe=%s",
-		Tape, CostModel, Weights, costs.StartCash, costs.NameCap, broker.GrossCap, broker.CashBuffer, broker.SectorCap, costs.DrawdownHalt,
+		"tape=%s|fill=%s|cost=%s|weights=%s|roster=%s|failing=%s|scalp=false|llm=false|cash=%.0f|name=%.4f|gross=%.4f|cashbuf=%.4f|sector=%.4f|halt=%.4f|min_hold_sessions=%d|turnover_cap_day=%.4f|max_hold_h=%.0f|stt_buy=%.4f|stt_sell=%.4f|exch=%.6f|sebi=%.6f|stamp=%.4f|gst=%.4f|brokerage=%.2f|adv_base=%.2f|adv_kappa=%.0f|universe=%s",
+		Tape, FillRule, CostModel, Weights, strings.Join(roster, ","), strings.Join(failing, ","),
+		costs.StartCash, costs.NameCap, broker.GrossCap, broker.CashBuffer, broker.SectorCap, costs.DrawdownHalt,
 		costs.MinHoldSessions, costs.TurnoverCapDay, costs.MaxHold.Hours(),
 		costs.RefSTTBpsBuy, costs.RefSTTBpsSell, costs.RefExchBps, costs.RefSEBIBps, costs.RefStampBps, costs.RefGSTRate, costs.RefBrokerage,
 		costs.ADVBaseBps, costs.ADVKappa, strings.Join(universe.EquitySymbols(), ","),

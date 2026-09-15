@@ -1,6 +1,23 @@
 import { describe, expect, it } from "vitest";
-import { heroExcess, heroTape } from "./hero";
+import { campaignTapeHint, heroExcess, heroTape } from "./hero";
 import { mockTape } from "./tape";
+import type { PublicManifest } from "./types";
+
+describe("frozen campaign tape hint", () => {
+  const base = { tape: "indstocks-1d", roster: [], failing: ["a", "b"] } as unknown as PublicManifest;
+
+  it("says the book held cash when the gate admitted nothing", () => {
+    const hint = campaignTapeHint(base);
+    expect(hint).toContain("indstocks-1d");
+    expect(hint).toContain("admitted 0 of 2");
+    expect(hint).toContain("held cash");
+    expect(hint).not.toContain("prices.Last");
+  });
+
+  it("counts trading vs failing otherwise", () => {
+    expect(campaignTapeHint({ ...base, roster: ["x"] })).toContain("1 trading · 2 failing at weight 0");
+  });
+});
 
 describe("missing INDstocks token", () => {
   const health = {

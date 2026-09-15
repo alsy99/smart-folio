@@ -13,11 +13,10 @@ import (
 	sentimentv1 "aperture/gen/sentiment/v1"
 	tradingv1 "aperture/gen/trading/v1"
 	"aperture/internal/trading"
+	"aperture/pkg/backtest"
 	pub "aperture/pkg/campaign"
 	"aperture/pkg/excess"
 	"aperture/pkg/marketclock"
-	"aperture/pkg/prices"
-	"aperture/pkg/strategies"
 
 	"google.golang.org/grpc"
 )
@@ -39,27 +38,40 @@ func (c *clock) Now() time.Time {
 	return c.t
 }
 
-type equalWeights struct{}
+// rosterWeights is the frozen learning client: equal weight across the
+// roster that cleared the gate as-of the window start, weight 0 for the
+// defaults that failed it. Nothing moves for 30 days.
+type rosterWeights struct {
+	snap backtest.RosterSnapshot
+}
 
-func (equalWeights) RecordTrade(context.Context, *learningv1.RecordTradeRequest, ...grpc.CallOption) (*learningv1.RecordTradeResponse, error) {
+func (rosterWeights) RecordTrade(context.Context, *learningv1.RecordTradeRequest, ...grpc.CallOption) (*learningv1.RecordTradeResponse, error) {
 	return &learningv1.RecordTradeResponse{}, nil
 }
-func (equalWeights) ListJournal(context.Context, *learningv1.ListJournalRequest, ...grpc.CallOption) (*learningv1.ListJournalResponse, error) {
+func (rosterWeights) ListJournal(context.Context, *learningv1.ListJournalRequest, ...grpc.CallOption) (*learningv1.ListJournalResponse, error) {
 	return &learningv1.ListJournalResponse{}, nil
 }
-func (equalWeights) GetWeights(context.Context, *learningv1.GetWeightsRequest, ...grpc.CallOption) (*learningv1.GetWeightsResponse, error) {
-	ids := strategies.IDs()
-	eq := 1.0 / float64(len(ids))
+func (r rosterWeights) GetWeights(context.Context, *learningv1.GetWeightsRequest, ...grpc.CallOption) (*learningv1.GetWeightsResponse, error) {
 	var w []*commonv1.StrategyWeight
-	for _, id := range ids {
-		w = append(w, &commonv1.StrategyWeight{StrategyId: id, Weight: eq})
+	if n := len(r.snap.Roster); n > 0 {
+		eq := 1.0 / float64(n)
+		for _, id := range r.snap.Roster {
+			w = append(w, &commonv1.StrategyWeight{StrategyId: id, Weight: eq})
+		}
+	}
+	for _, id := range r.snap.Failing {
+		w = append(w, &commonv1.StrategyWeight{StrategyId: id, Weight: 0, Regime: "failing-gate"})
+	}
+	// Always non-nil: an all-zero book is a verdict, not "learning is down".
+	if w == nil {
+		w = []*commonv1.StrategyWeight{}
 	}
 	return &learningv1.GetWeightsResponse{Weights: w}, nil
 }
-func (equalWeights) RunBacktest(context.Context, *learningv1.RunBacktestRequest, ...grpc.CallOption) (*learningv1.BacktestReport, error) {
+func (rosterWeights) RunBacktest(context.Context, *learningv1.RunBacktestRequest, ...grpc.CallOption) (*learningv1.BacktestReport, error) {
 	return &learningv1.BacktestReport{}, nil
 }
-func (equalWeights) GetBacktest(context.Context, *learningv1.GetBacktestRequest, ...grpc.CallOption) (*learningv1.BacktestReport, error) {
+func (rosterWeights) GetBacktest(context.Context, *learningv1.GetBacktestRequest, ...grpc.CallOption) (*learningv1.BacktestReport, error) {
 	return &learningv1.BacktestReport{}, nil
 }
 
@@ -121,17 +133,27 @@ func turnoverPct(notional, equity float64) float64 {
 	return pub.PP(notional / equity * 100)
 }
 
-// Replay runs the frozen 30-day paper book on the deterministic mock tape.
+// Replay runs the frozen 30-day paper book on the checked-in INDstocks daily
+// tape with the as-of roster: one MOC tick per session at 15:30 IST.
 func Replay() (*pub.Ledger, error) {
+	return ReplayDir("")
+}
+
+// ReplayDir replays the campaign whose bars.json and roster.json live in dir.
+func ReplayDir(dir string) (*pub.Ledger, error) {
 	undo := pinEnv()
 	defer undo()
 
+	in, err := pub.LoadInputs(dir)
+	if err != nil {
+		return nil, err
+	}
 	start, end := pub.Window()
 	clk := &clock{t: start}
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
 	svc := trading.New(trading.Deps{
-		MarketData: prices.Tape{Now: clk.Now},
-		Learning:   equalWeights{},
+		MarketData: pub.BarTape{Bars: in.Bars, Now: clk.Now},
+		Learning:   rosterWeights{snap: in.Roster},
 		Sentiment:  silentNews{},
 		Log:        log,
 		Now:        clk.Now,
@@ -143,25 +165,26 @@ func Replay() (*pub.Ledger, error) {
 	}
 
 	sha, dirty := pub.GitSHA()
-	led := &pub.Ledger{Manifest: pub.NewManifest(sha, dirty)}
+	led := &pub.Ledger{Manifest: pub.NewManifest(sha, dirty, in)}
 	loc := marketclock.Location()
 
 	for i := 0; i < pub.Days; i++ {
 		day := start.AddDate(0, 0, i)
 		y, m, d := day.Date()
-		session := time.Date(y, m, d, 15, 25, 0, 0, loc)
 		closeT := time.Date(y, m, d, 15, 30, 0, 0, loc)
 		if closeT.After(end) {
 			closeT = end
 		}
 		svc.ResetTickStats()
 		status := "weekend"
-		if marketclock.IsOpen(session) {
+		if marketclock.IsOpen(closeT) && hasSession(in.Bars, closeT) {
 			status = "open"
-			clk.Set(session)
+			clk.Set(closeT)
 			if _, err := svc.Tick(ctx, &tradingv1.TickRequest{}); err != nil {
 				return nil, err
 			}
+		} else if marketclock.IsOpen(closeT) {
+			status = "holiday"
 		}
 		clk.Set(closeT)
 		pr, err := svc.Print(ctx)
@@ -184,4 +207,19 @@ func Replay() (*pub.Ledger, error) {
 		})
 	}
 	return led, nil
+}
+
+// hasSession is true when NIFTY50 printed a close on that IST date — the
+// exchange calendar, so holidays fall out of the tape rather than a list.
+func hasSession(bars *pub.Bars, t time.Time) bool {
+	if bars == nil {
+		return false
+	}
+	d := marketclock.SessionDate(t)
+	for _, b := range bars.Series["NIFTY50"] {
+		if b.Date == d {
+			return true
+		}
+	}
+	return false
 }

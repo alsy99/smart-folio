@@ -8,6 +8,7 @@ import (
 	"time"
 
 	commonv1 "aperture/gen/common/v1"
+	learningv1 "aperture/gen/learning/v1"
 	tradingv1 "aperture/gen/trading/v1"
 	"aperture/pkg/broker"
 	"aperture/pkg/costs"
@@ -16,6 +17,8 @@ import (
 	"aperture/pkg/marketclock"
 	"aperture/pkg/strategies"
 	"aperture/pkg/universe"
+
+	"google.golang.org/grpc"
 )
 
 func TestDefaultRosterHoldsASession(t *testing.T) {
@@ -65,6 +68,56 @@ func TestScalpExitPath(t *testing.T) {
 	}
 	if shouldExit(true, time.Second, 0, 0.001, 1) {
 		t.Fatal("hold")
+	}
+}
+
+// zeroWeights is a learning stub whose real-tape gate failed every default:
+// each id is published at weight 0.
+type zeroWeights struct{ lnStub }
+
+func (zeroWeights) GetWeights(context.Context, *learningv1.GetWeightsRequest, ...grpc.CallOption) (*learningv1.GetWeightsResponse, error) {
+	var w []*commonv1.StrategyWeight
+	for _, id := range strategies.IDs() {
+		w = append(w, &commonv1.StrategyWeight{StrategyId: id, Weight: 0, Regime: "failing-gate"})
+	}
+	return &learningv1.GetWeightsResponse{Weights: w}, nil
+}
+
+// TestZeroWeightDefaultsNeverFill: failing defaults carry weight 0 and the
+// book must hold cash — no equal-weight fallback, no news tilt readmission.
+func TestZeroWeightDefaultsNeverFill(t *testing.T) {
+	t.Setenv("INVESTIGATION_DIR", t.TempDir())
+	now := friday1525()
+	bull := lateArticle(false, 0.9)
+	bull.Sources[0].PublishedAtUnixMs = now.Add(-2 * time.Hour).UnixMilli() // in-session, would tilt
+	svc := New(Deps{MarketData: mdStub{}, Learning: zeroWeights{}, Sentiment: &snStub{reports: []*commonv1.InvestigationReport{bull}}, Now: func() time.Time { return now }})
+	ctx := context.Background()
+	if _, err := svc.StartCampaign(ctx, &tradingv1.StartCampaignRequest{Days: 30}); err != nil {
+		t.Fatal(err)
+	}
+	resp, err := svc.Tick(ctx, &tradingv1.TickRequest{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.Fills != 0 {
+		t.Fatalf("all defaults gated out at weight 0, yet %d fills", resp.Fills)
+	}
+	svc.mu.Lock()
+	defer svc.mu.Unlock()
+	for id, w := range svc.plan.weights {
+		if w != 0 {
+			t.Fatalf("%s resurrected to weight %v", id, w)
+		}
+	}
+	for sym, sig := range svc.plan.signals {
+		if sig.Direction != 0 {
+			t.Fatalf("%s got a signal from a zero-weight method %s", sym, sig.StrategyID)
+		}
+	}
+	// Control: the same tape with equal weights does fill.
+	ctl := tickBook(t, now, nil)
+	if ctl.Fills == 0 {
+		t.Fatal("control fixture must fill so the zero-weight test is not vacuous")
 	}
 }
 

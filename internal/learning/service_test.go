@@ -12,6 +12,7 @@ import (
 
 	commonv1 "aperture/gen/common/v1"
 	learningv1 "aperture/gen/learning/v1"
+	"aperture/pkg/backtest"
 	"aperture/pkg/learn"
 	"aperture/pkg/strategies"
 )
@@ -139,6 +140,62 @@ func TestNoRosterFileBootsDefaultsAndSaysSo(t *testing.T) {
 	want := strategies.IDs()
 	if len(s.roster) != len(want) {
 		t.Fatalf("default roster %v", s.roster)
+	}
+}
+
+// TestFailingDefaultsGetWeightZero: a real-tape snapshot that failed every
+// shipped default leaves the roster empty. The desk must not fall back to
+// the defaults; it publishes each failing id at weight 0 and holds cash.
+func TestFailingDefaultsGetWeightZero(t *testing.T) {
+	rosterDir := t.TempDir()
+	t.Setenv("ROSTER_DIR", rosterDir)
+	all := strategies.IDs()
+	snap := backtest.RosterSnapshot{
+		Date: "2026-09-15", Tape: "indstocks-1d", Days: 1240,
+		Roster: []string{all[0]}, Failing: all[1:],
+	}
+	if _, err := backtest.SaveRoster(rosterDir, snap); err != nil {
+		t.Fatal(err)
+	}
+	s := NewDir(nil, t.TempDir())
+	resp, err := s.GetWeights(context.Background(), &learningv1.GetWeightsRequest{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]*commonv1.StrategyWeight{}
+	for _, w := range resp.Weights {
+		got[w.StrategyId] = w
+	}
+	if len(got) != len(all) {
+		t.Fatalf("every default must be published (roster or failing), got %d of %d", len(got), len(all))
+	}
+	if w := got[all[0]]; w == nil || w.Weight != 1 {
+		t.Fatalf("sole roster member must carry the book: %+v", w)
+	}
+	for _, id := range all[1:] {
+		w := got[id]
+		if w == nil || w.Weight != 0 || w.Regime != RegimeFailing {
+			t.Fatalf("failing default %s must be weight 0 / %s, got %+v", id, RegimeFailing, w)
+		}
+	}
+	if !strings.Contains(s.rosterSrc, "1 trading") || !strings.Contains(s.rosterSrc, "failing (weight 0)") {
+		t.Fatalf("hero line %q", s.rosterSrc)
+	}
+
+	// Everything failing ⇒ empty trading set, no default fallback.
+	snap.Roster, snap.Failing = nil, all
+	if _, err := backtest.SaveRoster(rosterDir, snap); err != nil {
+		t.Fatal(err)
+	}
+	s = NewDir(nil, t.TempDir())
+	resp, _ = s.GetWeights(context.Background(), &learningv1.GetWeightsRequest{})
+	for _, w := range resp.Weights {
+		if w.Weight != 0 {
+			t.Fatalf("all defaults failed the gate yet %s has weight %v", w.StrategyId, w.Weight)
+		}
+	}
+	if len(s.ids()) != 0 {
+		t.Fatalf("gated empty roster must not fall back to defaults: %v", s.ids())
 	}
 }
 
