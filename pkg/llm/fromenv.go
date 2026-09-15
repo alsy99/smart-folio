@@ -21,8 +21,8 @@ func FromEnv() Completer {
 		}
 	}
 
-	add("openai", openai.FromEnv())
-	add("gemini", gemini.FromEnv())
+	add("openai", wrapOpenAI(openai.FromEnv()))
+	add("gemini", wrapGemini(gemini.FromEnv()))
 	add("groq", &Compat{
 		Name:    "groq",
 		BaseURL: "https://api.groq.com/openai/v1/chat/completions",
@@ -67,5 +67,5 @@ func FromEnv() Completer {
 		slog.Info("llm", "provider", "none")
 		return openai.FromEnv()
 	}
-	return &Chain{providers: providers}
+	return &Chain{providers: providers, Dir: Dir()}
 }

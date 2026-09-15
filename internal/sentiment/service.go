@@ -2,7 +2,6 @@ package sentiment
 
 import (
 	"context"
-	"fmt"
 	"log/slog"
 	"sort"
 	"sync"
@@ -13,6 +12,7 @@ import (
 	"aperture/pkg/config"
 	"aperture/pkg/indstocks"
 	"aperture/pkg/llm"
+	"aperture/pkg/research"
 	"aperture/pkg/universe"
 )
 
@@ -36,7 +36,8 @@ type Service struct {
 	sentimentv1.UnimplementedSentimentServiceServer
 	log     *slog.Logger
 	cfg     Config
-	llm     Completer
+	llm     llm.Completer
+	desk    *research.Desk
 	sources []Source
 	clock   func() time.Time
 	refresh sync.Mutex
@@ -51,10 +52,7 @@ type Service struct {
 	maxWorkers  int
 }
 
-type Completer interface {
-	Enabled() bool
-	Complete(ctx context.Context, system, user string) (string, error)
-}
+type Completer = llm.Completer
 
 func New(cfg Config, log *slog.Logger, completer Completer, sources []Source) *Service {
 	if log == nil {
@@ -76,11 +74,13 @@ func New(cfg Config, log *slog.Logger, completer Completer, sources []Source) *S
 	for _, src := range sources {
 		names = append(names, src.Name())
 	}
-	log.Info("sentiment", "llm", completer.Enabled(), "sources", names)
+	log.Info("sentiment", "llm", completer.Enabled(), "sources", names,
+		"llm_max", llm.MaxCalls(), "tokens_day", llm.MaxTokens())
 	return &Service{
 		log: log, cfg: cfg, llm: completer, sources: sources, clock: time.Now,
 		scores:     map[string]*commonv1.SentimentScore{},
 		maxWorkers: cfg.MaxWorkers,
+		desk:       research.NewDesk(""),
 	}
 }
 
@@ -156,7 +156,8 @@ func (s *Service) Refresh(ctx context.Context, force bool) {
 		}
 	}
 	s.log.Info("news refresh begin", "force", force)
-	items, mode := gather(ctx, s.sources)
+	now := s.clock()
+	items, mode := gather(ctx, s.sources, now)
 	for _, n := range items {
 		s.log.Info("news item",
 			"mode", mode,
@@ -170,11 +171,6 @@ func (s *Service) Refresh(ctx context.Context, force bool) {
 	maxW := s.cfg.MaxWorkers
 	minMat := s.cfg.MinMateriality
 
-	type ranked struct {
-		key string
-		ns  []article
-		mat float64
-	}
 	var jobs []ranked
 	for k, ns := range clusters {
 		mat := materiality(ns)
@@ -199,39 +195,7 @@ func (s *Service) Refresh(ctx context.Context, force bool) {
 	s.maxWorkers = maxW
 	s.mu.Unlock()
 
-	llmCap := config.Int("INVESTIGATION_LLM_MAX", 5)
-	if llmCap < 0 {
-		llmCap = 0
-	}
-	llmLeft := llmCap
-	if !config.BoolDefault("INVESTIGATION_LLM", true) {
-		llmLeft = 0
-	}
-
-	reports := make([]*commonv1.InvestigationReport, len(jobs))
-	var wg sync.WaitGroup
-	sem := make(chan struct{}, maxW)
-	for i, job := range jobs {
-		wg.Add(1)
-		sem <- struct{}{}
-		mapped := false
-		for _, n := range job.ns {
-			if len(n.Symbols) > 0 {
-				mapped = true
-				break
-			}
-		}
-		useLLM := llmLeft > 0 && mapped
-		if useLLM {
-			llmLeft--
-		}
-		go func(i int, job ranked, useLLM bool) {
-			defer wg.Done()
-			defer func() { <-sem }()
-			reports[i] = investigate(ctx, s.llm, job.ns, mode, fmt.Sprintf("inv-%d-%s", i, job.key), useLLM)
-		}(i, job, useLLM)
-	}
-	wg.Wait()
+	reports := s.runQueue(ctx, jobs, mode)
 
 	scores := map[string]*commonv1.SentimentScore{}
 	for _, r := range reports {
@@ -275,6 +239,42 @@ func (s *Service) Refresh(ctx context.Context, force bool) {
 	s.mode = mode
 	s.workers = 0
 	s.mu.Unlock()
+}
+
+type ranked struct {
+	key string
+	ns  []article
+	mat float64
+}
+
+func (s *Service) runQueue(ctx context.Context, jobs []ranked, mode string) []*commonv1.InvestigationReport {
+	if s.desk == nil {
+		s.desk = research.NewDesk("")
+	}
+	s.desk.Now = s.clock
+	day := llm.ISTDay(s.clock())
+	reports := make([]*commonv1.InvestigationReport, 0, len(jobs))
+	for i, job := range jobs {
+		headline := ""
+		sym := ""
+		mapped := false
+		if len(job.ns) > 0 {
+			headline = job.ns[0].Title
+			if len(job.ns[0].Symbols) > 0 {
+				sym = job.ns[0].Symbols[0]
+				mapped = true
+			}
+		}
+		key := research.CacheKey(sym, day, headline)
+		s.log.Info("investigation queued", "i", i, "key", key, "mapped", mapped)
+		if rec, ok := s.desk.Lookup(key); ok {
+			s.log.Info("investigation cache hit", "id", rec.ID, "key", key)
+		}
+		useLLM := mapped && s.desk.AllowLLM()
+		id := research.IDForKey(key)
+		reports = append(reports, investigate(ctx, s.llm, s.desk, job.ns, mode, id, useLLM))
+	}
+	return reports
 }
 
 func (s *Service) Loop(ctx context.Context) {

@@ -38,7 +38,7 @@ export function LabPanel({ desk }: { desk: ReturnType<typeof useDesk> }) {
           <h2 className="scroll-mt-6 text-lg font-semibold tracking-tight">Journal</h2>
           <div className="mt-4 max-h-80 space-y-4 overflow-auto">
             {!journal?.entries?.length ? (
-              <Empty>Closed trades write whether they helped or hurt versus Nifty.</Empty>
+              <Empty>Closed trades store facts for the weekly review; a caption is not a retrain.</Empty>
             ) : (
               journal.entries.map((e) => (
                 <div key={e.id} className="border-t border-rule pt-3">

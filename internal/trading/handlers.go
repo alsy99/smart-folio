@@ -8,10 +8,15 @@ import (
 	commonv1 "aperture/gen/common/v1"
 	marketdatav1 "aperture/gen/marketdata/v1"
 	tradingv1 "aperture/gen/trading/v1"
+	pubcamp "aperture/pkg/campaign"
 	"aperture/pkg/costs"
 	"aperture/pkg/excess"
+	"aperture/pkg/live"
 	"aperture/pkg/marketclock"
 	"aperture/pkg/universe"
+
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 func (s *Service) GetPortfolio(_ context.Context, _ *tradingv1.GetPortfolioRequest) (*tradingv1.GetPortfolioResponse, error) {
@@ -65,8 +70,13 @@ func (s *Service) StartCampaign(ctx context.Context, req *tradingv1.StartCampaig
 	s.mu.Lock()
 	s.cash = costs.StartCash
 	s.eq0 = costs.StartCash
+	s.peak = costs.StartCash
 	s.pos = map[string]*commonv1.Position{}
 	s.open = nil
+	s.exc = map[string]*excursion{}
+	if s.desk != nil {
+		s.desk.Reset()
+	}
 	s.camp.active = true
 	s.camp.auto = true
 	s.camp.start = now
@@ -75,6 +85,8 @@ func (s *Service) StartCampaign(ctx context.Context, req *tradingv1.StartCampaig
 	s.camp.ticks = 0
 	s.beatWins = map[string]int{}
 	s.beatN = map[string]int{}
+	s.lastTurnover = 0
+	s.lastFills = 0
 	s.mu.Unlock()
 	s.captureBenchStart(ctx)
 	s.log.Info("campaign started", "days", days)
@@ -103,10 +115,18 @@ func (s *Service) SetAutopilot(_ context.Context, req *tradingv1.SetAutopilotReq
 	s.mu.Lock()
 	s.camp.auto = req.Enabled
 	s.mu.Unlock()
+	if req.Enabled {
+		_ = live.Clear()
+	} else {
+		_ = live.Trip()
+	}
 	return &tradingv1.SetAutopilotResponse{Enabled: req.Enabled}, nil
 }
 
 func (s *Service) SetStrategyWeights(_ context.Context, req *tradingv1.SetStrategyWeightsRequest) (*tradingv1.SetStrategyWeightsResponse, error) {
+	if pubcamp.IsFrozen() {
+		return nil, status.Error(codes.FailedPrecondition, "public 30-day campaign is frozen; weights stay equal until the published window ends")
+	}
 	s.mu.Lock()
 	s.w = req.Weights
 	s.mu.Unlock()

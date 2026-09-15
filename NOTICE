@@ -1,0 +1,16 @@
+Aperture
+Copyright 2026 the Aperture authors
+
+This product is licensed under the Apache License, Version 2.0.
+The git repository is named smart-folio; the product, Go module, and desk
+title are Aperture.
+
+This is educational software for a personal NSE paper-trading lab.
+It is not financial advice, not a brokerage, and not a promise that the
+book will beat Nifty, Sensex, or mutual funds by ten percentage points.
+That figure is a measured target on the desk.
+
+Live exchange orders stay compile-time off until a written strategy spec,
+broker principal path, Algo-ID tagging, static IP for order endpoints,
+an order-rate cap under the exchange threshold, a human kill switch, and
+this disclosure are all in place.

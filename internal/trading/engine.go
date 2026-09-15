@@ -11,10 +11,13 @@ import (
 	marketdatav1 "aperture/gen/marketdata/v1"
 	sentimentv1 "aperture/gen/sentiment/v1"
 	tradingv1 "aperture/gen/trading/v1"
+	"aperture/pkg/asof"
+	"aperture/pkg/broker"
 	"aperture/pkg/config"
 	"aperture/pkg/costs"
 	"aperture/pkg/excess"
 	"aperture/pkg/marketclock"
+	"aperture/pkg/research"
 	"aperture/pkg/strategies"
 	"aperture/pkg/universe"
 )
@@ -24,7 +27,7 @@ type bookPlan struct {
 	signals    map[string]strategies.Signal
 	standAside map[string]bool
 	weights    map[string]float64
-	invIDs     map[string][]string
+	invID      map[string]string
 }
 
 func (s *Service) Tick(ctx context.Context, _ *tradingv1.TickRequest) (*tradingv1.TickResponse, error) {
@@ -67,32 +70,31 @@ func (s *Service) Plan(ctx context.Context) error {
 	if err != nil {
 		s.log.Warn("investigations", "err", err)
 	}
-	scores, err := s.sn.ScoreSymbols(ctx, &sentimentv1.ScoreSymbolsRequest{Symbols: universe.EquitySymbols()})
-	if err != nil {
-		s.log.Warn("sentiment scores", "err", err)
+	bar := s.now()
+	var reports []*commonv1.InvestigationReport
+	if inv != nil {
+		reports = asof.Reports(inv.Reports, bar)
 	}
-	scoreMap := map[string]float64{}
-	if scores != nil {
-		for _, sc := range scores.Scores {
-			scoreMap[sc.Symbol] = sc.Score
-		}
-	}
+	scoreMap := asof.Scores(reports)
 	standAside := map[string]bool{}
 	tilts := map[string]float64{}
-	invIDs := map[string][]string{}
+	invID := map[string]string{}
+	invRank := map[string]float64{}
 	newsBySym := map[string]string{}
-	if inv != nil {
-		for _, r := range inv.Reports {
-			for _, sym := range r.Symbols {
-				if r.StandAside {
-					standAside[sym] = true
-				}
-				invIDs[sym] = append(invIDs[sym], r.Id)
-				newsBySym[sym] += r.Headline + " " + r.Thesis + " "
+	for _, r := range reports {
+		rank := math.Abs(r.Score) * r.Confidence
+		for _, sym := range r.Symbols {
+			if r.StandAside {
+				standAside[sym] = true
 			}
-			for _, t := range r.StrategyImplications {
-				tilts[t.StrategyId] += t.Tilt
+			if rank >= invRank[sym] && r.Id != "" {
+				invRank[sym] = rank
+				invID[sym] = r.Id
 			}
+			newsBySym[sym] += r.Headline + " " + r.Thesis + " "
+		}
+		for _, t := range r.StrategyImplications {
+			tilts[t.StrategyId] += t.Tilt
 		}
 	}
 
@@ -143,7 +145,7 @@ func (s *Service) Plan(ctx context.Context) error {
 	}
 	s.mu.Lock()
 	s.plan = bookPlan{
-		at: s.now(), signals: picked, standAside: standAside, weights: baseW, invIDs: invIDs,
+		at: s.now(), signals: picked, standAside: standAside, weights: baseW, invID: invID,
 	}
 	s.mu.Unlock()
 	s.log.Info("strategy plan",
@@ -170,6 +172,7 @@ func (s *Service) Execute(ctx context.Context) (*tradingv1.TickResponse, error) 
 	defer s.mu.Unlock()
 	plan := s.plan
 	fills, closes := 0, 0
+	turnover := 0.0
 	s.updateMarksLocked(last)
 	niftyRet := 0.0
 	if st := s.benchStart["NIFTY50"]; st > 0 && last["NIFTY50"] > 0 {
@@ -183,6 +186,7 @@ func (s *Service) Execute(ctx context.Context) (*tradingv1.TickResponse, error) 
 			remain = append(remain, t)
 			continue
 		}
+		s.markExcursionLocked(t, px)
 		move := (px - t.Entry) / t.Entry
 		if t.Side == "SELL" {
 			move = -move
@@ -192,6 +196,7 @@ func (s *Service) Execute(ctx context.Context) (*tradingv1.TickResponse, error) 
 		if shouldExit(scalpMode(), hold, move, sig.Direction) {
 			s.closeLocked(t, px, niftyRet, s.tradeADV(ctx, t.Symbol))
 			closes++
+			turnover += t.Qty * t.Exit
 			go s.record(t)
 		} else {
 			remain = append(remain, t)
@@ -199,83 +204,86 @@ func (s *Service) Execute(ctx context.Context) (*tradingv1.TickResponse, error) 
 	}
 	s.open = remain
 
-	eq := s.markLocked()
-	halted := costs.BookHalted(eq, s.eq0)
-	if halted {
-		s.log.Info("paper halt", "reason", "book drawdown", "equity", eq, "start", s.eq0)
-	}
-	for _, sym := range universe.EquitySymbols() {
-		if halted {
-			break
+	snap := s.snapshotLocked()
+	if broker.Halted(snap) {
+		s.desk.NoteHalt(snap)
+	} else {
+		for _, sym := range universe.EquitySymbols() {
+			if plan.standAside[sym] {
+				continue
+			}
+			px := last[sym]
+			if px == 0 {
+				continue
+			}
+			sig := plan.signals[sym]
+			if sig.Direction <= 0 || sig.Score < 0.25 {
+				continue
+			}
+			if skipSubSession(sig.StrategyID) {
+				continue
+			}
+			if s.hasOpen(sym) {
+				continue
+			}
+			room := broker.Room(snap, sym)
+			if room < costs.MinNameNotional {
+				continue
+			}
+			w := plan.weights[sig.StrategyID]
+			notional := snap.Equity * costs.NameCap * sig.Score * (0.5 + w)
+			if notional > room {
+				notional = room
+			}
+			if notional < costs.MinNameNotional {
+				continue
+			}
+			qty := math.Floor(notional / px)
+			if qty < 1 {
+				continue
+			}
+			fillPx := costs.BuyFill(px, qty, s.tradeADV(ctx, sym))
+			in := broker.Intent{Symbol: sym, Side: broker.Buy, Qty: qty, Price: fillPx}
+			if dec := s.desk.Admit(in, snap); !dec.Allow {
+				continue
+			}
+			cost := qty * fillPx
+			charge := costs.RoundTripBuy(cost)
+			s.cash -= cost + charge.Total
+			s.seq++
+			inv := plan.invID[sym]
+			if inv == "" {
+				inv = s.mintInvestigation(sym, sig)
+			}
+			t := &commonv1.PaperTrade{
+				Id: "t-" + strconv.Itoa(s.seq), Symbol: sym, Side: "BUY", StrategyId: sig.StrategyID,
+				Qty: qty, Entry: fillPx, Open: true, OpenedAtUnixMs: now.UnixMilli(),
+				InvestigationIds: []string{inv},
+				Lesson:           charge.Lesson,
+			}
+			_ = research.LinkFill(s.invDir(), t.Id, inv)
+			s.open = append(s.open, t)
+			p := s.pos[sym]
+			if p == nil {
+				p = &commonv1.Position{Symbol: sym}
+				s.pos[sym] = p
+			}
+			newQty := p.Qty + qty
+			p.AvgPrice = (p.AvgPrice*p.Qty + fillPx*qty) / newQty
+			p.Qty = newQty
+			p.Last = px
+			p.MarketValue = p.Qty * px
+			p.Pnl = (px - p.AvgPrice) * p.Qty
+			fills++
+			turnover += qty * fillPx
+			snap = s.snapshotLocked()
 		}
-		if plan.standAside[sym] {
-			continue
-		}
-		px := last[sym]
-		if px == 0 {
-			continue
-		}
-		sig := plan.signals[sym]
-		if sig.Direction <= 0 || sig.Score < 0.25 {
-			continue
-		}
-		if skipSubSession(sig.StrategyID) {
-			continue
-		}
-		if s.hasOpen(sym) {
-			continue
-		}
-		held := 0.0
-		if p := s.pos[sym]; p != nil {
-			held = p.MarketValue
-		}
-		room := costs.NameRoom(eq, held)
-		if room < costs.MinNameNotional {
-			continue
-		}
-		w := plan.weights[sig.StrategyID]
-		notional := eq * costs.NameCap * sig.Score * (0.5 + w)
-		if notional > room {
-			notional = room
-		}
-		if notional > s.cash*0.25 {
-			notional = s.cash * 0.25
-		}
-		if notional < costs.MinNameNotional || s.cash < notional {
-			continue
-		}
-		qty := math.Floor(notional / px)
-		if qty < 1 {
-			continue
-		}
-		fillPx := costs.BuyFill(px, qty, s.tradeADV(ctx, sym))
-		cost := qty * fillPx
-		charge := costs.RoundTripBuy(cost)
-		s.cash -= cost + charge.Total
-		s.seq++
-		t := &commonv1.PaperTrade{
-			Id: "t-" + strconv.Itoa(s.seq), Symbol: sym, Side: "BUY", StrategyId: sig.StrategyID,
-			Qty: qty, Entry: fillPx, Open: true, OpenedAtUnixMs: now.UnixMilli(),
-			InvestigationIds: plan.invIDs[sym],
-			Lesson:           charge.Lesson,
-		}
-		s.open = append(s.open, t)
-		p := s.pos[sym]
-		if p == nil {
-			p = &commonv1.Position{Symbol: sym}
-			s.pos[sym] = p
-		}
-		newQty := p.Qty + qty
-		p.AvgPrice = (p.AvgPrice*p.Qty + fillPx*qty) / newQty
-		p.Qty = newQty
-		p.Last = px
-		p.MarketValue = p.Qty * px
-		p.Pnl = (px - p.AvgPrice) * p.Qty
-		fills++
 	}
 
 	s.camp.ticks++
-	eq = s.markLocked()
+	s.lastTurnover = turnover
+	s.lastFills = fills + closes
+	eq := s.markLocked()
 	rP := excess.PortfolioReturn(eq, s.eq0)
 	for _, b := range universe.Benchmarks() {
 		st := s.benchStart[b.Symbol]

@@ -10,9 +10,12 @@ import (
 	marketdatav1 "aperture/gen/marketdata/v1"
 	sentimentv1 "aperture/gen/sentiment/v1"
 	tradingv1 "aperture/gen/trading/v1"
+	"aperture/pkg/broker"
 	"aperture/pkg/config"
 	"aperture/pkg/costs"
+	"aperture/pkg/live"
 	"aperture/pkg/llm"
+	"aperture/pkg/research"
 )
 
 type Config struct {
@@ -68,6 +71,12 @@ type Service struct {
 	seq        int
 	plan       bookPlan
 	analyzing  bool
+	peak         float64
+	desk         *broker.Paper
+	exc          map[string]*excursion
+	inv          *research.Desk
+	lastTurnover float64
+	lastFills    int
 }
 
 type campaign struct {
@@ -87,22 +96,29 @@ func New(d Deps) *Service {
 		log = slog.Default()
 	}
 	if config.Bool("AUTOPILOT_LIVE_IND") {
-		log.Warn("AUTOPILOT_LIVE_IND is ignored; fills stay on the paper book. INDstocks is quotes and history only.")
+		log.Warn("AUTOPILOT_LIVE_IND is ignored; fills stay on the paper book. INDstocks is quotes and history only. Live routing is compile-time off.")
 	}
 	log.Info("paper book",
 		"mode", "positional-cash",
 		"scalp", config.Bool("SCALP_MODE"),
 		"name_cap", costs.NameCap,
+		"gross_cap", broker.GrossCap,
+		"cash_buffer", broker.CashBuffer,
+		"sector_cap", broker.SectorCap,
 		"drawdown_halt", costs.DrawdownHalt,
+		"live_orders", live.OrdersMode(),
+		"live_ready", live.Ready(),
 	)
 	return &Service{
 		md: d.MarketData, ln: d.Learning, sn: d.Sentiment, llm: d.LLM,
 		log: log, now: now, cfg: d.Cfg,
-		cash: costs.StartCash, eq0: costs.StartCash,
+		cash: costs.StartCash, eq0: costs.StartCash, peak: costs.StartCash,
 		pos:        map[string]*commonv1.Position{},
 		benchStart: map[string]float64{},
 		beatWins:   map[string]int{},
 		beatN:      map[string]int{},
+		desk:       broker.NewPaper(log),
+		inv:        research.NewDesk(""),
 	}
 }
 

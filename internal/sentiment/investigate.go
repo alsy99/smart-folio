@@ -10,12 +10,12 @@ import (
 	"time"
 
 	commonv1 "aperture/gen/common/v1"
-	"aperture/pkg/config"
+	"aperture/pkg/llm"
 	"aperture/pkg/research"
 	"aperture/pkg/strategies"
 )
 
-func investigate(ctx context.Context, llm Completer, ns []article, mode, id string, useLLM bool) *commonv1.InvestigationReport {
+func investigate(ctx context.Context, completer llm.Completer, desk *research.Desk, ns []article, mode, id string, useLLM bool) *commonv1.InvestigationReport {
 	txt := ""
 	var sources []*commonv1.NewsItem
 	symset := map[string]struct{}{}
@@ -36,7 +36,13 @@ func investigate(ctx context.Context, llm Completer, ns []article, mode, id stri
 		symbols = append(symbols, s)
 	}
 	sort.Strings(symbols)
-	age := time.Since(ns[0].Published)
+	asOf := ns[0].Published
+	for _, n := range ns {
+		if n.Published.After(asOf) {
+			asOf = n.Published
+		}
+	}
+	age := time.Since(asOf)
 	conf := 0.45 + 0.12*float64(len(providers))
 	if age > 24*time.Hour {
 		conf -= 0.15
@@ -68,11 +74,15 @@ func investigate(ctx context.Context, llm Completer, ns []article, mode, id stri
 		sym = symbols[0]
 	}
 	in := research.Input{
-		Symbol: sym, Headline: ns[0].Title, News: txt, Score: score,
+		Symbol: sym, Headline: ns[0].Title, News: txt, Score: score, Now: asOf,
 	}
 	note := research.Heuristic(in)
-	if useLLM && llm != nil && llm.Enabled() && config.BoolDefault("INVESTIGATION_LLM", true) {
-		note = research.Conclude(ctx, llm, in)
+	if desk == nil {
+		desk = research.DefaultDesk()
+	}
+	note, rec := desk.Run(ctx, completer, in, useLLM)
+	if rec.ID != "" {
+		id = rec.ID
 	}
 	if note.Conclusion != "" {
 		thesis = note.Conclusion
@@ -114,7 +124,7 @@ func investigate(ctx context.Context, llm Completer, ns []article, mode, id stri
 		Id: id, Headline: ns[0].Title, Symbols: symbols,
 		EventType: event, Stance: stance, Score: score, Confidence: conf,
 		Corroboration: int32(len(providers)), Horizon: horizon, StrategyImplications: tilts,
-		StandAside: standAside, Sources: sources, AnalyzedAtUnixMs: time.Now().UnixMilli(),
+		StandAside: standAside, Sources: sources, AnalyzedAtUnixMs: asOf.UnixMilli(),
 		Mode: mode, Thesis: thesis, Risks: risks, Status: "completed",
 	}
 }

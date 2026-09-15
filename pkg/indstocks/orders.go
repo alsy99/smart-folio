@@ -6,10 +6,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+
+	"aperture/pkg/broker"
+	"aperture/pkg/live"
 )
 
-// Order is an INDstocks cash/F&O ticket. Aperture does not send these unless
-// a future path explicitly calls PlaceOrder; the paper book never does.
+// Order is an INDstocks cash/F&O ticket. The default build never posts it.
 type Order struct {
 	TxnType    string  `json:"txn_type"`
 	Exchange   string  `json:"exchange"`
@@ -24,7 +26,7 @@ type Order struct {
 	AlgoID     string  `json:"algo_id"`
 }
 
-func (c *Client) PlaceOrder(ctx context.Context, o Order) (json.RawMessage, error) {
+func prepareOrder(o Order) Order {
 	if o.AlgoID == "" {
 		o.AlgoID = "99999"
 	}
@@ -40,7 +42,19 @@ func (c *Client) PlaceOrder(ctx context.Context, o Order) (json.RawMessage, erro
 	if o.Product == "" {
 		o.Product = "CNC"
 	}
-	return c.postJSON(ctx, "/order", o)
+	return o
+}
+
+// PlaceGuarded is the live-adapter path: Check, then PlaceOrder.
+// In the default binary PlaceOrder is compile-time off.
+func (c *Client) PlaceGuarded(ctx context.Context, snap broker.Snapshot, in broker.Intent, o Order) (json.RawMessage, error) {
+	var out json.RawMessage
+	err := broker.Submit(ctx, snap, in, func(ctx context.Context, _ broker.Intent) error {
+		b, err := c.PlaceOrder(ctx, o)
+		out = b
+		return err
+	})
+	return out, err
 }
 
 func (c *Client) postJSON(ctx context.Context, path string, body any) (json.RawMessage, error) {
@@ -65,4 +79,14 @@ func (c *Client) postJSON(ctx context.Context, path string, body any) (json.RawM
 		return nil, fmt.Errorf("indstocks: %s", env.err())
 	}
 	return data, nil
+}
+
+func refuseLive(reason error) (json.RawMessage, error) {
+	if live.Killed() {
+		return nil, live.ErrKilled
+	}
+	if !live.Ready() {
+		return nil, reason
+	}
+	return nil, reason
 }

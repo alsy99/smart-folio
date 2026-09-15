@@ -13,6 +13,7 @@ import type {
   NewsFeed,
   Portfolio,
   PickResearch,
+  PublicCampaign,
   Sentiment,
 } from "@/lib/types";
 
@@ -34,10 +35,11 @@ export function useDesk() {
   const [backtest, setBacktest] = useState<BacktestReport | null>(null);
   const [btBusy, setBtBusy] = useState(false);
   const [health, setHealth] = useState<Health | null>(null);
+  const [pub, setPub] = useState<PublicCampaign | null>(null);
 
   const refresh = useCallback(async () => {
     try {
-      const [p, c, b, j, inv, n, s, bt, rs, h] = await Promise.all([
+      const [p, c, b, j, inv, n, s, bt, rs, h, pubCamp] = await Promise.all([
         api.portfolio(),
         api.campaign(),
         api.benchmarks(),
@@ -48,6 +50,7 @@ export function useDesk() {
         api.backtest(),
         api.research().catch(() => ({ picks: [] as PickResearch[] })),
         api.health().catch(() => null),
+        api.publicCampaign().catch(() => null),
       ]);
       setPortfolio(p);
       setCampaign(c);
@@ -59,23 +62,34 @@ export function useDesk() {
       setSentiment(s.scores || []);
       setBacktest(bt);
       setHealth(h);
+      setPub(pubCamp);
       setErr(null);
-      const nifty = b.benchmarks?.find((x) => x.id === "NIFTY50");
-      setHistory((h) => {
-        const next = [
-          ...h,
-          {
-            t: new Date().toLocaleTimeString("en-IN", {
-              hour: "2-digit",
-              minute: "2-digit",
-              second: "2-digit",
-            }),
-            equity: p.equity,
-            nifty: nifty ? nifty.start * (1 + nifty.returnPct / 100) : 0,
-          },
-        ];
-        return next.slice(-24);
-      });
+      if (pubCamp?.days?.length) {
+        setHistory(
+          pubCamp.days.map((d) => ({
+            t: d.date.slice(5),
+            equity: d.equity,
+            nifty: 0,
+          }))
+        );
+      } else {
+        const niftyPt = b.benchmarks?.find((x) => x.id === "NIFTY50");
+        setHistory((prev) => {
+          const next = [
+            ...prev,
+            {
+              t: new Date().toLocaleTimeString("en-IN", {
+                hour: "2-digit",
+                minute: "2-digit",
+                second: "2-digit",
+              }),
+              equity: p.equity,
+              nifty: niftyPt ? niftyPt.start * (1 + niftyPt.returnPct / 100) : 0,
+            },
+          ];
+          return next.slice(-24);
+        });
+      }
     } catch (e) {
       setErr(e instanceof Error ? e.message : "gateway unreachable");
     } finally {
@@ -157,6 +171,7 @@ export function useDesk() {
     history,
     backtest,
     health,
+    pub,
     nifty,
     onTrack,
     positions,

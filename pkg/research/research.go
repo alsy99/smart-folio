@@ -10,15 +10,14 @@ import (
 	"sync"
 	"time"
 
+	"aperture/pkg/corporate"
 	"aperture/pkg/fundamentals"
 	"aperture/pkg/indstocks"
+	"aperture/pkg/llm"
 	"aperture/pkg/ta"
 )
 
-type Completer interface {
-	Enabled() bool
-	Complete(ctx context.Context, system, user string) (string, error)
-}
+type Completer = llm.Completer
 
 type Note struct {
 	Symbol      string  `json:"symbol"`
@@ -51,15 +50,19 @@ type Input struct {
 const systemPrompt = `You are the research desk for Aperture, an India NSE paper-trading lab. Not financial advice, not a live broker.
 You receive (1) a qualitative fundamental card that is a reference briefing, NOT live filings, (2) computed technicals on the desk tape (INDstocks when a token is set, otherwise synthetic), (3) optional news.
 Reason step by step: what the business is, what the tape is doing, whether news is material or mis-tagged, then a conclusion for a positional paper book vs Nifty (days to weeks, not a scalp).
+Never output orders, quantities, prices, broker instructions, or a trade side. The paper book places its own fills. Research commentary only.
 Reply with JSON only:
 {"stance":"bullish|bearish|mixed","horizon":"swing|position","stand_aside":false,"fundamental":"2-3 sentences","technical":"2-3 sentences","conclusion":"2-3 sentences on what the paper book should do and why","risks":"main ways this call is wrong"}`
 
 var (
-	gate     = make(chan struct{}, 1)
-	cacheMu  sync.Mutex
-	cache    = map[string]Note{}
-	cacheTTL = 15 * time.Minute
+	defaultOnce sync.Once
+	defaultDesk *Desk
 )
+
+func DefaultDesk() *Desk {
+	defaultOnce.Do(func() { defaultDesk = NewDesk("") })
+	return defaultDesk
+}
 
 func Snapshot(in Input) (ta.Snapshot, fundamentals.Card) {
 	now := in.Now
@@ -70,7 +73,7 @@ func Snapshot(in Input) (ta.Snapshot, fundamentals.Card) {
 	defer cancel()
 	bars, _ := indstocks.BarsOrMock(ctx, in.Symbol, "1d", 40, now)
 	tech := ta.FromBars(in.Symbol, bars)
-	return tech, fundamentals.Lookup(in.Symbol)
+	return tech, fundamentals.LookupAsOf(in.Symbol, now)
 }
 
 func Heuristic(in Input) Note {
@@ -87,6 +90,13 @@ func Heuristic(in Input) Note {
 		horizon = "swing"
 	}
 	fund := card.Summary()
+	bar := in.Now
+	if bar.IsZero() {
+		bar = time.Now()
+	}
+	if note := corporate.Notes(in.Symbol, bar); note != "" {
+		fund += " " + note
+	}
 	technical := tech.Summary()
 	if in.Symbol == "" {
 		fund = "No mapped NSE name — keyword tagging missed this headline."
@@ -112,51 +122,12 @@ func Heuristic(in Input) Note {
 }
 
 func Conclude(ctx context.Context, llm Completer, in Input) Note {
-	base := Heuristic(in)
-	if llm == nil || !llm.Enabled() {
-		return base
-	}
-	cacheMu.Lock()
-	if prev, ok := cache[in.Symbol]; ok && time.Since(time.UnixMilli(prev.AtUnixMs)) < cacheTTL && prev.Mode == "llm" {
-		cacheMu.Unlock()
-		prev.StrategyID = in.StrategyID
-		prev.Score = in.Score
-		prev.Direction = in.Direction
-		return prev
-	}
-	cacheMu.Unlock()
-
-	select {
-	case gate <- struct{}{}:
-		defer func() { <-gate }()
-	case <-ctx.Done():
-		return base
-	}
-
-	tech, card := Snapshot(in)
-	user := fmt.Sprintf("SYMBOL %s (%s)\nFUNDAMENTAL CARD: %s\nTECHNICALS: %s\nSIGNAL strategy=%s score=%.2f direction=%d\nNEWS: %s\nHEADLINE: %s",
-		in.Symbol, card.Sector, card.Summary(), tech.Summary(), in.StrategyID, in.Score, in.Direction, clip(in.News, 1200), in.Headline)
-	raw, err := llm.Complete(ctx, systemPrompt, user)
-	if err != nil || strings.TrimSpace(raw) == "" {
-		base.Risks = base.Risks + " LLM: " + errString(err)
-		return base
-	}
-	n := parse(raw, base)
-	n.Mode = "llm"
-	n.AtUnixMs = nowMs(time.Now())
-	cacheMu.Lock()
-	cache[in.Symbol] = n
-	cacheMu.Unlock()
+	n, _ := DefaultDesk().Run(ctx, llm, in, true)
 	return n
 }
 
 func parse(raw string, fallback Note) Note {
-	raw = strings.TrimSpace(raw)
-	if i := strings.Index(raw, "{"); i >= 0 {
-		if j := strings.LastIndex(raw, "}"); j > i {
-			raw = raw[i : j+1]
-		}
-	}
+	raw = StripOrderJSON(raw)
 	var p struct {
 		Stance      string `json:"stance"`
 		Horizon     string `json:"horizon"`

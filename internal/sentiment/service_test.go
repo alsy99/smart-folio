@@ -31,6 +31,8 @@ func (nopLLM) Complete(context.Context, string, string) (string, error) {
 }
 
 func TestForceRefreshIgnoresCache(t *testing.T) {
+	t.Setenv("INVESTIGATION_DIR", t.TempDir())
+	t.Setenv("INVESTIGATION_LLM", "false")
 	src := &countSource{}
 	svc := New(Config{RefreshEvery: time.Hour, MaxWorkers: 2, MinMateriality: 0}, slog.Default(), nopLLM{}, []Source{src})
 	ctx := context.Background()

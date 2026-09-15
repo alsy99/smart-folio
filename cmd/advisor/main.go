@@ -14,6 +14,7 @@ import (
 
 func main() {
 	serve.Logging()
+	slog.SetDefault(slog.Default().With("svc", "advisor"))
 	ctx, stop := serve.Context()
 	defer stop()
 	cfg := advisor.LoadConfig()

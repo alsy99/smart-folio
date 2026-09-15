@@ -3,10 +3,10 @@ package trading
 import (
 	"context"
 	"log/slog"
+	"os"
 	"sort"
-	"time"
 
-	"aperture/pkg/config"
+	"aperture/pkg/llm"
 	"aperture/pkg/research"
 	"aperture/pkg/strategies"
 )
@@ -14,6 +14,9 @@ import (
 const picksFile = "data/picks.json"
 
 func (s *Service) analyzePicks(picked map[string]strategies.Signal, news map[string]string) {
+	if os.Getenv("CAMPAIGN_REPLAY") == "1" {
+		return
+	}
 	s.mu.Lock()
 	if s.analyzing {
 		s.mu.Unlock()
@@ -26,8 +29,6 @@ func (s *Service) analyzePicks(picked map[string]strategies.Signal, news map[str
 		s.analyzing = false
 		s.mu.Unlock()
 	}()
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
-	defer cancel()
 	type row struct {
 		sym string
 		sig strategies.Signal
@@ -40,7 +41,11 @@ func (s *Service) analyzePicks(picked map[string]strategies.Signal, news map[str
 		rows = append(rows, row{sym, sig})
 	}
 	sort.Slice(rows, func(i, j int) bool { return rows[i].sig.Score > rows[j].sig.Score })
-	llmLeft := config.Int("INVESTIGATION_LLM_MAX", 5)
+	desk := s.inv
+	if desk == nil {
+		desk = research.NewDesk("")
+	}
+	day := llm.ISTDay(s.now())
 	var notes []research.Note
 	for _, r := range rows {
 		in := research.Input{
@@ -53,9 +58,10 @@ func (s *Service) analyzePicks(picked map[string]strategies.Signal, news map[str
 			Now:        s.now(),
 		}
 		note := research.Heuristic(in)
-		if llmLeft > 0 && s.llm != nil && s.llm.Enabled() {
-			note = research.Conclude(ctx, s.llm, in)
-			llmLeft--
+		key := research.CacheKey(r.sym, day, firstHeadline(news[r.sym], r.sig.Reason))
+		if rec, ok := desk.Lookup(key); ok && rec.Thesis != "" {
+			note.Conclusion = rec.Thesis
+			note.Mode = rec.Mode
 		}
 		s.log.Info("pick research",
 			"symbol", note.Symbol,
@@ -69,4 +75,32 @@ func (s *Service) analyzePicks(picked map[string]strategies.Signal, news map[str
 	if err := research.Save(picksFile, notes); err != nil {
 		slog.Warn("pick research save", "err", err)
 	}
+}
+
+func firstHeadline(news, fallback string) string {
+	if news != "" {
+		return news
+	}
+	return fallback
+}
+
+func (s *Service) invDir() string {
+	if s.inv != nil && s.inv.Dir != "" {
+		return s.inv.Dir
+	}
+	return llm.Dir()
+}
+
+func (s *Service) mintInvestigation(sym string, sig strategies.Signal) string {
+	desk := s.inv
+	if desk == nil {
+		desk = research.NewDesk(s.invDir())
+		s.inv = desk
+	}
+	in := research.Input{
+		Symbol: sym, Headline: sig.Reason, StrategyID: sig.StrategyID,
+		Score: sig.Score, Direction: sig.Direction, Now: s.now(),
+	}
+	_, rec := desk.Run(context.Background(), nil, in, false)
+	return rec.ID
 }

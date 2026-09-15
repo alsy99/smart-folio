@@ -14,8 +14,9 @@ import (
 	marketdatav1 "aperture/gen/marketdata/v1"
 	sentimentv1 "aperture/gen/sentiment/v1"
 	tradingv1 "aperture/gen/trading/v1"
+	"aperture/pkg/campaign"
 	"aperture/pkg/config"
-	"aperture/pkg/indstocks"
+	"aperture/pkg/ratelimit"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -82,22 +83,28 @@ func (a *API) Handler() http.Handler {
 	mux.HandleFunc("GET /campaign", a.unary(15*time.Second, func(ctx context.Context, _ *http.Request) (proto.Message, error) {
 		return a.tr.GetCampaign(ctx, &tradingv1.GetCampaignRequest{})
 	}))
-	mux.HandleFunc("POST /campaign", a.unary(45*time.Second, func(ctx context.Context, r *http.Request) (proto.Message, error) {
-		var body struct {
-			Days int32 `json:"days"`
+	mux.HandleFunc("GET /public-campaign", a.publicCampaign)
+	mux.HandleFunc("POST /campaign", func(w http.ResponseWriter, r *http.Request) {
+		if campaign.IsFrozen() {
+			http.Error(w, "public 30-day campaign is frozen; same git SHA, settings, universe, and cost model. Clone and go run ./cmd/campaign -verify.", http.StatusConflict)
+			return
 		}
-		_ = json.NewDecoder(r.Body).Decode(&body)
-		camp, err := a.tr.StartCampaign(ctx, &tradingv1.StartCampaignRequest{Days: body.Days})
-		if err != nil {
-			return nil, err
-		}
-		a.log.Info("campaign start, refreshing news")
-		// Limit < 0 forces sentiment to bypass the 15-minute news cache.
-		if _, err := a.sn.ListNews(ctx, &sentimentv1.ListNewsRequest{Limit: -1}); err != nil {
-			a.log.Warn("campaign news refresh", "err", err)
-		}
-		return camp, nil
-	}))
+		a.unary(45*time.Second, func(ctx context.Context, r *http.Request) (proto.Message, error) {
+			var body struct {
+				Days int32 `json:"days"`
+			}
+			_ = json.NewDecoder(r.Body).Decode(&body)
+			camp, err := a.tr.StartCampaign(ctx, &tradingv1.StartCampaignRequest{Days: body.Days})
+			if err != nil {
+				return nil, err
+			}
+			a.log.Info("campaign start, refreshing news")
+			if _, err := a.sn.ListNews(ctx, &sentimentv1.ListNewsRequest{Limit: -1}); err != nil {
+				a.log.Warn("campaign news refresh", "err", err)
+			}
+			return camp, nil
+		})(w, r)
+	})
 	mux.HandleFunc("POST /autopilot", a.unary(15*time.Second, func(ctx context.Context, r *http.Request) (proto.Message, error) {
 		var body struct {
 			Enabled bool `json:"enabled"`
@@ -141,17 +148,19 @@ func (a *API) Handler() http.Handler {
 	}))
 	mux.HandleFunc("GET /research", a.research)
 	mux.HandleFunc("POST /advisor/chat", a.chat)
-	return chain(recoverer(a.log), cors, requestLog(a.log))(mux)
+	rps := config.Int("GATEWAY_RPS", 40)
+	burst := config.Int("GATEWAY_BURST", 80)
+	return chain(recoverer(a.log), cors, ratelimit.New(rps, burst).Middleware, requestLog(a.log))(mux)
 }
 
-func (a *API) health(w http.ResponseWriter, r *http.Request) {
-	ctx, cancel := context.WithTimeout(r.Context(), 25*time.Second)
-	defer cancel()
+func (a *API) publicCampaign(w http.ResponseWriter, _ *http.Request) {
+	led, err := campaign.Load("")
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]any{
-		"status":     "ok",
-		"indstocks":  indstocks.Snapshot(ctx),
-	})
+	_ = json.NewEncoder(w).Encode(led)
 }
 
 func (a *API) research(w http.ResponseWriter, _ *http.Request) {

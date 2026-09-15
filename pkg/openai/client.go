@@ -33,10 +33,15 @@ func (c *Client) Enabled() bool {
 }
 
 func (c *Client) Complete(ctx context.Context, system, user string) (string, error) {
+	text, _, _, _, _, err := c.CompleteWithUsage(ctx, system, user)
+	return text, err
+}
+
+func (c *Client) CompleteWithUsage(ctx context.Context, system, user string) (text, model string, prompt, completion, total int, err error) {
 	if !c.Enabled() {
-		return "", ErrDisabled
+		return "", "", 0, 0, 0, ErrDisabled
 	}
-	model := c.Model
+	model = c.Model
 	if model == "" {
 		model = "gpt-4o-mini"
 	}
@@ -48,17 +53,17 @@ func (c *Client) Complete(ctx context.Context, system, user string) (string, err
 		},
 	})
 	if err != nil {
-		return "", err
+		return "", model, 0, 0, 0, err
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, "https://api.openai.com/v1/chat/completions", bytes.NewReader(payload))
 	if err != nil {
-		return "", err
+		return "", model, 0, 0, 0, err
 	}
 	req.Header.Set("Authorization", "Bearer "+c.APIKey)
 	req.Header.Set("Content-Type", "application/json")
 	raw, err := httpx.Do(c.HTTP, req)
 	if err != nil {
-		return "", err
+		return "", model, 0, 0, 0, err
 	}
 	var parsed struct {
 		Choices []struct {
@@ -66,12 +71,21 @@ func (c *Client) Complete(ctx context.Context, system, user string) (string, err
 				Content string `json:"content"`
 			} `json:"message"`
 		} `json:"choices"`
+		Usage struct {
+			PromptTokens     int `json:"prompt_tokens"`
+			CompletionTokens int `json:"completion_tokens"`
+			TotalTokens      int `json:"total_tokens"`
+		} `json:"usage"`
 	}
 	if err := json.Unmarshal(raw, &parsed); err != nil {
-		return "", err
+		return "", model, 0, 0, 0, err
 	}
 	if len(parsed.Choices) == 0 {
-		return "", errors.New("openai: empty completion")
+		return "", model, 0, 0, 0, errors.New("openai: empty completion")
 	}
-	return parsed.Choices[0].Message.Content, nil
+	total = parsed.Usage.TotalTokens
+	if total == 0 {
+		total = parsed.Usage.PromptTokens + parsed.Usage.CompletionTokens
+	}
+	return parsed.Choices[0].Message.Content, model, parsed.Usage.PromptTokens, parsed.Usage.CompletionTokens, total, nil
 }

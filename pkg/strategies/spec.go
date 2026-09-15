@@ -6,6 +6,10 @@ import (
 	"strings"
 )
 
+// Paper roster spec (positional NSE cash, days–weeks).
+// sma_cross 1d fast=10 slow=30; momentum 1d lookback=10; mean_reversion 1d lookback=20;
+// breakout 1d lookback=20; swing 1d fast=10 slow=30; sentiment tilt 1d.
+// This is the shipped paper book, not an exchange-filed live algo specification.
 type Spec struct {
 	ID        string
 	Method    string

@@ -1,34 +1,64 @@
 package fundamentals
 
-import "aperture/pkg/universe"
+import (
+	"time"
+
+	"aperture/pkg/asof"
+	"aperture/pkg/universe"
+)
 
 // Card is a qualitative reference sheet — not live filings or a Bloomberg print.
+// RevisedAt is the as-of timestamp; a revision after the bar is not used.
 type Card struct {
-	Symbol  string
-	Name    string
-	Sector  string
-	Model   string
-	Drivers string
-	Watch   string
-	Risks   string
+	Symbol    string
+	Name      string
+	Sector    string
+	Model     string
+	Drivers   string
+	Watch     string
+	Risks     string
+	RevisedAt time.Time
 }
 
+var cardAsOf = time.Date(2024, 1, 1, 9, 15, 0, 0, time.UTC)
+
 func Lookup(symbol string) Card {
-	if c, ok := cards[symbol]; ok {
-		if inst, ok := universe.Lookup(symbol); ok {
-			c.Name = inst.Name
-			c.Sector = inst.Sector
-		}
-		return c
-	}
+	return LookupAsOf(symbol, time.Now())
+}
+
+// LookupAsOf returns the card only if its revision is known at the bar.
+func LookupAsOf(symbol string, bar time.Time) Card {
 	inst, _ := universe.Lookup(symbol)
-	return Card{
+	fallback := Card{
 		Symbol: symbol, Name: inst.Name, Sector: inst.Sector,
 		Model:   "India cash equity on the Aperture universe.",
 		Drivers: "Tape, news investigations, and peer relative strength vs Nifty.",
 		Watch:   "Event type, corroboration, and whether the setup is trend or mean-reversion.",
 		Risks:   "No live 10-Q; treat this card as a desk briefing not a filing.",
+		RevisedAt: cardAsOf,
 	}
+	c, ok := cards[symbol]
+	if !ok {
+		c = fallback
+	} else {
+		c.RevisedAt = cardAsOf
+		c.Name = inst.Name
+		c.Sector = inst.Sector
+	}
+	if bar.IsZero() {
+		return c
+	}
+	if !asof.KnownAt(c.RevisedAt, bar) {
+		return Card{
+			Symbol: symbol, Name: inst.Name, Sector: inst.Sector,
+			RevisedAt: c.RevisedAt,
+			Model:     "No fundamental card as-of this bar.",
+			Drivers:   "Card revision is after the bar — ignored.",
+			Watch:     "Wait for a dated revision at or before the bar.",
+			Risks:     "Look-ahead: do not use a later briefing on an earlier fill.",
+		}
+	}
+	return c
 }
 
 func (c Card) Summary() string {

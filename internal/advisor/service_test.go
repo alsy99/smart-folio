@@ -24,8 +24,8 @@ func TestHeuristicFallback(t *testing.T) {
 	if resp.Mode != "mock" {
 		t.Fatalf("mode %s", resp.Mode)
 	}
-	if !strings.Contains(strings.ToLower(resp.Reply), "excess") {
-		t.Fatalf("reply %q", resp.Reply)
+	if !strings.Contains(strings.ToLower(resp.Reply), "not a promise") {
+		t.Fatalf("10pp must be disclosed as a target: %q", resp.Reply)
 	}
 	risk, err := svc.Chat(context.Background(), &advisorv1.ChatRequest{Message: "what is the risk halt?"})
 	if err != nil {
@@ -33,5 +33,16 @@ func TestHeuristicFallback(t *testing.T) {
 	}
 	if !strings.Contains(risk.Reply, "15%") {
 		t.Fatalf("risk reply %q", risk.Reply)
+	}
+}
+
+func TestHealthPingSkipsLLM(t *testing.T) {
+	svc := New(disabledLLM{})
+	resp, err := svc.Chat(context.Background(), &advisorv1.ChatRequest{Message: "  __health__  "})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.Mode != "health" || resp.Reply != "ok" {
+		t.Fatalf("%+v", resp)
 	}
 }

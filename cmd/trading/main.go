@@ -18,6 +18,7 @@ import (
 
 func main() {
 	serve.Logging()
+	slog.SetDefault(slog.Default().With("svc", "trading"))
 	ctx, stop := serve.Context()
 	defer stop()
 	cfg := trading.LoadConfig()

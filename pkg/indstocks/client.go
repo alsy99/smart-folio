@@ -16,6 +16,7 @@ import (
 
 	"aperture/pkg/config"
 	"aperture/pkg/httpx"
+	"aperture/pkg/live"
 	"aperture/pkg/prices"
 	"aperture/pkg/universe"
 )
@@ -35,27 +36,27 @@ type Client struct {
 	totpSec string
 	cache   string
 
-	mu       sync.Mutex
-	scrips   map[string]Scrip
-	scripAt  time.Time
-	quotes   map[string]Quote
-	quoteAt  time.Time
-	bars     map[string]barSet
-	pulse    Pulse
-	pulseAt  time.Time
-	tokenAt  time.Time
-	lastReq  time.Time
+	mu      sync.Mutex
+	scrips  map[string]Scrip
+	scripAt time.Time
+	quotes  map[string]Quote
+	quoteAt time.Time
+	bars    map[string]barSet
+	pulse   Pulse
+	pulseAt time.Time
+	tokenAt time.Time
+	lastReq time.Time
 }
 
 type Quote struct {
-	LivePrice           float64 `json:"live_price"`
-	DayChangePct        float64 `json:"day_change_percentage"`
-	DayChange           float64 `json:"day_change"`
-	DayOpen             float64 `json:"day_open"`
-	DayHigh             float64 `json:"day_high"`
-	DayLow              float64 `json:"day_low"`
-	PrevClose           float64 `json:"prev_close"`
-	Volume              float64 `json:"volume"`
+	LivePrice    float64 `json:"live_price"`
+	DayChangePct float64 `json:"day_change_percentage"`
+	DayChange    float64 `json:"day_change"`
+	DayOpen      float64 `json:"day_open"`
+	DayHigh      float64 `json:"day_high"`
+	DayLow       float64 `json:"day_low"`
+	PrevClose    float64 `json:"prev_close"`
+	Volume       float64 `json:"volume"`
 }
 
 type Status struct {
@@ -690,7 +691,7 @@ func Snapshot(ctx context.Context) Status {
 	}
 	statusMu.Unlock()
 
-	st := Status{Mode: "mock", Orders: "paper"}
+	st := Status{Mode: "mock", Orders: live.OrdersMode()}
 	c := Shared()
 	if c == nil {
 		statusMu.Lock()

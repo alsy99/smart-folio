@@ -16,6 +16,7 @@ import (
 
 func main() {
 	serve.Logging()
+	slog.SetDefault(slog.Default().With("svc", "gateway"))
 	ctx, stop := serve.Context()
 	defer stop()
 	cfg := gateway.LoadConfig()

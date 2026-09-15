@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"aperture/pkg/asof"
 	"aperture/pkg/httpx"
 )
 
@@ -30,7 +31,7 @@ func DefaultSources() []Source {
 	}
 }
 
-func gather(ctx context.Context, sources []Source) ([]article, string) {
+func gather(ctx context.Context, sources []Source, now time.Time) ([]article, string) {
 	var mu sync.Mutex
 	var all []article
 	mode := "mock"
@@ -55,10 +56,16 @@ func gather(ctx context.Context, sources []Source) ([]article, string) {
 		}(src)
 	}
 	wg.Wait()
-	if len(all) == 0 {
-		return mockNews(), "mock"
+	var known []article
+	for _, a := range all {
+		if asof.KnownAt(a.Published, now) {
+			known = append(known, a)
+		}
 	}
-	return all, mode
+	if len(known) == 0 {
+		return mockNews(now), "mock"
+	}
+	return known, mode
 }
 
 type newsAPI struct {

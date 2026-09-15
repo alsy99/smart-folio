@@ -27,8 +27,20 @@ func (c *Compat) Enabled() bool {
 }
 
 func (c *Compat) Complete(ctx context.Context, system, user string) (string, error) {
+	r, err := c.CompleteR(ctx, system, user)
+	return r.Text, err
+}
+
+func (c *Compat) ModelName() string {
+	if c == nil {
+		return ""
+	}
+	return c.Model
+}
+
+func (c *Compat) CompleteR(ctx context.Context, system, user string) (Result, error) {
 	if !c.Enabled() {
-		return "", fmt.Errorf("%s: disabled", c.Name)
+		return Result{}, fmt.Errorf("%s: disabled", c.Name)
 	}
 	model := c.Model
 	payload, err := json.Marshal(map[string]any{
@@ -39,11 +51,11 @@ func (c *Compat) Complete(ctx context.Context, system, user string) (string, err
 		},
 	})
 	if err != nil {
-		return "", err
+		return Result{}, err
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.BaseURL, bytes.NewReader(payload))
 	if err != nil {
-		return "", err
+		return Result{}, err
 	}
 	req.Header.Set("Authorization", "Bearer "+c.APIKey)
 	req.Header.Set("Content-Type", "application/json")
@@ -56,7 +68,7 @@ func (c *Compat) Complete(ctx context.Context, system, user string) (string, err
 	}
 	raw, err := httpx.Do(client, req)
 	if err != nil {
-		return "", fmt.Errorf("%s: %w", c.Name, err)
+		return Result{}, fmt.Errorf("%s: %w", c.Name, err)
 	}
 	var parsed struct {
 		Choices []struct {
@@ -69,13 +81,21 @@ func (c *Compat) Complete(ctx context.Context, system, user string) (string, err
 		} `json:"error"`
 	}
 	if err := json.Unmarshal(raw, &parsed); err != nil {
-		return "", fmt.Errorf("%s: decode: %w", c.Name, err)
+		return Result{}, fmt.Errorf("%s: decode: %w", c.Name, err)
 	}
 	if parsed.Error.Message != "" {
-		return "", fmt.Errorf("%s: %s", c.Name, parsed.Error.Message)
+		return Result{}, fmt.Errorf("%s: %s", c.Name, parsed.Error.Message)
 	}
 	if len(parsed.Choices) == 0 {
-		return "", errors.New(c.Name + ": empty completion")
+		return Result{}, errors.New(c.Name + ": empty completion")
 	}
-	return parsed.Choices[0].Message.Content, nil
+	p, co, tot := ParseUsage(raw)
+	r := Result{
+		Text: parsed.Choices[0].Message.Content, Provider: c.Name, Model: model,
+		PromptTokens: p, CompletionTokens: co, TotalTokens: tot,
+	}
+	if r.TotalTokens == 0 {
+		r.TotalTokens = EstimateTokens(system, user, r.Text)
+	}
+	return r, nil
 }

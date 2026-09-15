@@ -1,3 +1,7 @@
+# Aperture desk + five gRPC backends + HTTP gateway.
+# Do not put API keys in NEXT_PUBLIC_*. Pass secrets via env / .env only.
+# No INDstocks token here on purpose: the hero must show MOCK.
+
 services:
   marketdata:
     build:
@@ -5,6 +9,7 @@ services:
       args: { SERVICE: marketdata }
     environment:
       MARKETDATA_BIND: ":9081"
+      LOG_FORMAT: json
     ports: ["9081:9081"]
   learning:
     build:
@@ -12,6 +17,9 @@ services:
       args: { SERVICE: learning }
     environment:
       LEARNING_BIND: ":9083"
+      LEARNING_DIR: /data/learning
+      LOG_FORMAT: json
+    volumes: ["learning-data:/data/learning"]
     ports: ["9083:9083"]
   sentiment:
     build:
@@ -21,6 +29,12 @@ services:
       SENTIMENT_BIND: ":9084"
       MAX_INVESTIGATION_WORKERS: "16"
       NEWS_REFRESH_SECONDS: "900"
+      LOG_FORMAT: json
+      NEWSAPI_KEY: ${NEWSAPI_KEY:-}
+      CURRENTS_API_KEY: ${CURRENTS_API_KEY:-}
+      FINNHUB_API_KEY: ${FINNHUB_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      GOOGLE_API_KEY: ${GOOGLE_API_KEY:-}
     ports: ["9084:9084"]
   advisor:
     build:
@@ -28,6 +42,9 @@ services:
       args: { SERVICE: advisor }
     environment:
       ADVISOR_BIND: ":9085"
+      LOG_FORMAT: json
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      GOOGLE_API_KEY: ${GOOGLE_API_KEY:-}
     ports: ["9085:9085"]
   trading:
     build:
@@ -39,6 +56,8 @@ services:
       LEARNING_ADDR: "learning:9083"
       SENTIMENT_ADDR: "sentiment:9084"
       AUTOSTART_CAMPAIGN: "true"
+      SCALP_MODE: "false"
+      LOG_FORMAT: json
     ports: ["9082:9082"]
     depends_on: [marketdata, learning, sentiment]
   gateway:
@@ -52,6 +71,10 @@ services:
       LEARNING_ADDR: "learning:9083"
       SENTIMENT_ADDR: "sentiment:9084"
       ADVISOR_ADDR: "advisor:9085"
+      GATEWAY_RPS: "40"
+      GATEWAY_BURST: "80"
+      CAMPAIGN_DIR: /app/campaign/public-30d
+      LOG_FORMAT: json
     ports: ["8080:8080"]
     depends_on: [marketdata, trading, learning, sentiment, advisor]
   web:
@@ -63,3 +86,6 @@ services:
       NEXT_PUBLIC_API_URL: http://127.0.0.1:8080
     ports: ["43127:43127"]
     depends_on: [gateway]
+
+volumes:
+  learning-data:

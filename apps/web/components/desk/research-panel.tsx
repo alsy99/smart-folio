@@ -13,7 +13,7 @@ export function ResearchPanel({ desk }: { desk: ReturnType<typeof useDesk> }) {
           <h2 className="scroll-mt-6 text-lg font-semibold tracking-tight">Investigations</h2>
           <p className="mt-1 text-sm text-steel">
             {investigations
-              ? `${investigations.reports?.length || 0} reports, ${investigations.mode}`
+              ? `${investigations.reports?.length || 0} reports, ${investigations.mode}. Headlines after the bar are dropped from fills.`
               : "Loading…"}
           </p>
           <div className="mt-4 max-h-[520px] space-y-6 overflow-auto pr-1">

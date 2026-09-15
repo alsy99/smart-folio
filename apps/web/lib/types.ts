@@ -186,8 +186,49 @@ export type ResearchFeed = { picks: PickResearch[] };
 
 export type EquityPoint = { t: string; equity: number; nifty: number };
 
+export type PublicDay = {
+  date: string;
+  session: string;
+  equity: number;
+  excessNifty50Pct: number;
+  excessNifty500Pct: number;
+  excessSensexPct: number;
+  drawdownPct: number;
+  turnoverPct: number;
+  turnoverInr: number;
+  fills: number;
+  halted: boolean;
+};
+
+export type PublicManifest = {
+  name: string;
+  frozen: boolean;
+  gitSha: string;
+  dirty: boolean;
+  start: string;
+  end: string;
+  startUnixMs: number;
+  endUnixMs: number;
+  days: number;
+  tape: string;
+  llm: boolean;
+  scalpMode: boolean;
+  weights: string;
+  costModel: string;
+  settingsHash: string;
+  universe: string[];
+  reproduce: string;
+};
+
+export type PublicCampaign = {
+  manifest: PublicManifest;
+  days: PublicDay[];
+};
+
 export type Health = {
   status: string;
+  tape?: "live" | "mock";
+  services?: Record<string, { ok: boolean; error?: string }>;
   indstocks?: {
     configured: boolean;
     mode: string;

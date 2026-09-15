@@ -13,6 +13,7 @@ import (
 
 func main() {
 	serve.Logging()
+	slog.SetDefault(slog.Default().With("svc", "marketdata"))
 	ctx, stop := serve.Context()
 	defer stop()
 	cfg := marketdata.LoadConfig()

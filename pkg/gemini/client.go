@@ -40,10 +40,15 @@ func (c *Client) Enabled() bool {
 }
 
 func (c *Client) Complete(ctx context.Context, system, user string) (string, error) {
+	text, _, _, _, _, err := c.CompleteWithUsage(ctx, system, user)
+	return text, err
+}
+
+func (c *Client) CompleteWithUsage(ctx context.Context, system, user string) (text, model string, prompt, completion, total int, err error) {
 	if !c.Enabled() {
-		return "", ErrDisabled
+		return "", "", 0, 0, 0, ErrDisabled
 	}
-	model := c.Model
+	model = c.Model
 	if model == "" {
 		model = "gemini-flash-latest"
 	}
@@ -56,18 +61,18 @@ func (c *Client) Complete(ctx context.Context, system, user string) (string, err
 		},
 	})
 	if err != nil {
-		return "", err
+		return "", model, 0, 0, 0, err
 	}
 	u := fmt.Sprintf("https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent", model)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, u, bytes.NewReader(payload))
 	if err != nil {
-		return "", err
+		return "", model, 0, 0, 0, err
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("x-goog-api-key", c.APIKey)
 	raw, err := httpx.Do(c.HTTP, req)
 	if err != nil {
-		return "", err
+		return "", model, 0, 0, 0, err
 	}
 	var parsed struct {
 		Candidates []struct {
@@ -77,18 +82,27 @@ func (c *Client) Complete(ctx context.Context, system, user string) (string, err
 				} `json:"parts"`
 			} `json:"content"`
 		} `json:"candidates"`
+		UsageMetadata struct {
+			PromptTokenCount     int `json:"promptTokenCount"`
+			CandidatesTokenCount int `json:"candidatesTokenCount"`
+			TotalTokenCount      int `json:"totalTokenCount"`
+		} `json:"usageMetadata"`
 		Error struct {
 			Message string `json:"message"`
 		} `json:"error"`
 	}
 	if err := json.Unmarshal(raw, &parsed); err != nil {
-		return "", err
+		return "", model, 0, 0, 0, err
 	}
 	if parsed.Error.Message != "" {
-		return "", fmt.Errorf("gemini: %s", parsed.Error.Message)
+		return "", model, 0, 0, 0, fmt.Errorf("gemini: %s", parsed.Error.Message)
 	}
 	if len(parsed.Candidates) == 0 || len(parsed.Candidates[0].Content.Parts) == 0 {
-		return "", errors.New("gemini: empty completion")
+		return "", model, 0, 0, 0, errors.New("gemini: empty completion")
 	}
-	return parsed.Candidates[0].Content.Parts[0].Text, nil
+	total = parsed.UsageMetadata.TotalTokenCount
+	if total == 0 {
+		total = parsed.UsageMetadata.PromptTokenCount + parsed.UsageMetadata.CandidatesTokenCount
+	}
+	return parsed.Candidates[0].Content.Parts[0].Text, model, parsed.UsageMetadata.PromptTokenCount, parsed.UsageMetadata.CandidatesTokenCount, total, nil
 }

@@ -23,8 +23,10 @@ func toNewsItem(n article) *commonv1.NewsItem {
 	}
 }
 
-func mockNews() []article {
-	now := time.Now()
+func mockNews(now time.Time) []article {
+	if now.IsZero() {
+		now = time.Now()
+	}
 	raw := []struct {
 		title, sum, sym, evt string
 	}{

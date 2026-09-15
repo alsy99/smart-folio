@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"math"
 	"sort"
 	"sync"
 	"time"
@@ -13,59 +12,92 @@ import (
 	learningv1 "aperture/gen/learning/v1"
 	"aperture/pkg/backtest"
 	"aperture/pkg/config"
+	"aperture/pkg/learn"
 	"aperture/pkg/strategies"
 )
 
 type Config struct {
 	Bind string
+	Dir  string
 }
 
 func LoadConfig() Config {
-	return Config{Bind: config.String("LEARNING_BIND", ":9083")}
-}
-
-type stat struct {
-	n, wins int
-	pnlEMA  float64
-	excEMA  float64
-}
-
-type Service struct {
-	learningv1.UnimplementedLearningServiceServer
-	log     *slog.Logger
-	mu      sync.Mutex
-	journal []*commonv1.JournalEntry
-	stats   map[string]*stat
-	roster  []string
-	report  *learningv1.BacktestReport
+	return Config{
+		Bind: config.String("LEARNING_BIND", ":9083"),
+		Dir:  config.String("LEARNING_DIR", "data/learning"),
+	}
 }
 
 func rosterDir() string {
 	return config.String("ROSTER_DIR", "data/roster")
 }
 
+type Service struct {
+	learningv1.UnimplementedLearningServiceServer
+	log     *slog.Logger
+	dir     string
+	now     func() time.Time
+	mu      sync.Mutex
+	journal []*commonv1.JournalEntry
+	roster  []string
+	snap    learn.Snapshot
+	report  *learningv1.BacktestReport
+}
+
 func New(log *slog.Logger) *Service {
+	return NewDir(log, LoadConfig().Dir)
+}
+
+func NewDir(log *slog.Logger, dir string) *Service {
 	if log == nil {
 		log = slog.Default()
 	}
-	st := map[string]*stat{}
-	roster := strategies.IDs()
-	for _, id := range roster {
-		st[id] = &stat{}
+	if dir == "" {
+		dir = "data/learning"
 	}
-	s := &Service{log: log, stats: st, roster: roster}
-	// Boot from the dated roster snapshot if one exists — never from
-	// "whatever won last night" in memory.
+	s := &Service{log: log, dir: dir, now: time.Now, roster: strategies.IDs()}
 	if snap, path, err := backtest.LoadLatestRoster(rosterDir()); err == nil {
 		s.roster = snap.Roster
 		log.Info("roster from snapshot", "file", path, "date", snap.Date, "names", len(snap.Roster))
 	}
+	s.bootWeights()
+	s.bootJournal()
 	return s
 }
 
+func (s *Service) bootWeights() {
+	if loaded, err := learn.LoadSnapshot(s.dir); err == nil && len(loaded.Weights) > 0 {
+		s.snap = loaded
+		return
+	}
+	s.snap = learn.EqualSnapshot(s.ids(), s.now().UTC())
+	if err := learn.SaveSnapshot(s.dir, s.snap); err != nil {
+		s.log.Warn("equal weight snapshot", "err", err)
+	}
+}
+
+func (s *Service) bootJournal() {
+	closes, err := learn.LoadCloses(s.dir)
+	if err != nil {
+		s.log.Warn("closes", "err", err)
+		return
+	}
+	for i := len(closes) - 1; i >= 0 && len(s.journal) < 200; i-- {
+		s.journal = append(s.journal, journalFromClose(closes[i]))
+	}
+	if err := learn.BackupCloses(s.dir, s.now().UTC()); err != nil {
+		s.log.Warn("journal backup", "err", err)
+	}
+}
+
+func (s *Service) ids() []string {
+	if len(s.roster) > 0 {
+		return s.roster
+	}
+	return strategies.IDs()
+}
+
 func (s *Service) Seed(ctx context.Context) {
-	// A fresh weekly snapshot already validated the roster OOS — reuse it
-	// instead of re-running (and possibly re-promoting) on every boot.
 	if snap, path, err := backtest.LoadLatestRoster(rosterDir()); err == nil && !backtest.RosterStale(snap, time.Now(), 7) {
 		s.mu.Lock()
 		s.roster = snap.Roster
@@ -80,35 +112,69 @@ func (s *Service) Seed(ctx context.Context) {
 	s.log.Info("seeded 5-year walk-forward backtest roster")
 }
 
+func (s *Service) Weekly(ctx context.Context) {
+	t := time.NewTicker(time.Hour)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+			s.maybeWeekly()
+		}
+	}
+}
+
+func (s *Service) maybeWeekly() {
+	s.mu.Lock()
+	due := learn.Due(s.snap, s.now().UTC())
+	s.mu.Unlock()
+	if !due {
+		return
+	}
+	if _, err := s.RunWeekly(false); err != nil {
+		s.log.Error("weekly review", "err", err)
+	}
+}
+
+// RunWeekly is the only path that may rewrite weights.json.
+func (s *Service) RunWeekly(force bool) (learn.Snapshot, error) {
+	closes, err := learn.LoadCloses(s.dir)
+	if err != nil {
+		return learn.Snapshot{}, err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	now := s.now().UTC()
+	next := learn.ApplyWeekly(s.ids(), s.snap, closes, now, force)
+	if err := learn.SaveSnapshot(s.dir, next); err != nil {
+		return learn.Snapshot{}, err
+	}
+	s.snap = next
+	s.log.Info("weekly review", "moved", next.Moved, "note", next.Note, "closes", len(closes))
+	return next, nil
+}
+
 func (s *Service) RecordTrade(_ context.Context, req *learningv1.RecordTradeRequest) (*learningv1.RecordTradeResponse, error) {
 	t := req.GetTrade()
 	if t == nil {
 		return &learningv1.RecordTradeResponse{}, nil
 	}
-	tags := t.AttributionTags
-	lesson := t.Lesson
-	if lesson == "" {
-		lesson, tags = Attribute(t)
-		t.AttributionTags = tags
-		t.Lesson = lesson
+	lesson, tags := Attribute(t)
+	if t.Lesson != "" {
+		lesson = t.Lesson + "; " + lesson
 	}
+	t.AttributionTags = tags
+	t.Lesson = lesson
+	c := closeFromPaper(t, lesson)
 	entry := &commonv1.JournalEntry{
-		Id: "j-" + t.Id, Trade: t, Lesson: lesson, Tags: tags, TsUnixMs: time.Now().UnixMilli(),
+		Id: "j-" + t.Id, Trade: t, Lesson: lesson, Tags: tags, TsUnixMs: s.now().UnixMilli(),
 	}
 	s.mu.Lock()
+	if err := learn.AppendClose(s.dir, c); err != nil {
+		s.log.Error("append close", "err", err)
+	}
 	s.journal = append([]*commonv1.JournalEntry{entry}, s.journal...)
-	st := s.stats[t.StrategyId]
-	if st == nil {
-		st = &stat{}
-		s.stats[t.StrategyId] = st
-	}
-	st.n++
-	if t.Pnl > 0 {
-		st.wins++
-	}
-	const alpha = 0.2
-	st.pnlEMA = (1-alpha)*st.pnlEMA + alpha*t.Pnl
-	st.excEMA = (1-alpha)*st.excEMA + alpha*t.ExcessReturn
 	s.mu.Unlock()
 	return &learningv1.RecordTradeResponse{Entry: entry}, nil
 }
@@ -126,51 +192,29 @@ func (s *Service) ListJournal(_ context.Context, req *learningv1.ListJournalRequ
 func (s *Service) GetWeights(_ context.Context, _ *learningv1.GetWeightsRequest) (*learningv1.GetWeightsResponse, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	ids := s.roster
-	if len(ids) == 0 {
-		ids = strategies.IDs()
+	ids := s.ids()
+	byID := map[string]learn.Weight{}
+	for _, w := range s.snap.Weights {
+		byID[w.StrategyID] = w
 	}
-	raw := make([]float64, len(ids))
-	sum := 0.0
-	for i, id := range ids {
-		st := s.stats[id]
-		if st == nil {
-			st = &stat{}
-		}
-		wr := 0.5
-		if st.n > 0 {
-			wr = float64(st.wins) / float64(st.n)
-		}
-		score := math.Exp(3 * (st.excEMA*10 + (wr - 0.5)))
-		if score < 0.15 {
-			score = 0.15
-		}
-		raw[i] = score
-		sum += score
-	}
-	if sum == 0 {
-		sum = 1
-	}
+	eq := learn.EqualWeights(ids)
 	var weights []*commonv1.StrategyWeight
-	for i, id := range ids {
-		st := s.stats[id]
-		wr := 0.5
-		regime := "mixed"
-		if st != nil && st.n > 0 {
-			wr = float64(st.wins) / float64(st.n)
-		}
-		if st != nil && st.excEMA != 0 {
-			regime = "backtest-fit"
-		}
-		expect := 0.0
-		if st != nil {
-			expect = st.excEMA
+	for _, id := range ids {
+		row, ok := byID[id]
+		if !ok {
+			row = learn.Weight{StrategyID: id, Weight: eq[id], Regime: "pending"}
 		}
 		weights = append(weights, &commonv1.StrategyWeight{
-			StrategyId: id, Weight: raw[i] / sum, Expectancy: expect, WinRate: wr, Regime: regime,
+			StrategyId: id, Weight: row.Weight, Expectancy: row.Expectancy,
+			WinRate: row.WinRate, Regime: row.Regime,
 		})
 	}
-	sort.Slice(weights, func(i, j int) bool { return weights[i].Weight > weights[j].Weight })
+	sort.Slice(weights, func(i, j int) bool {
+		if weights[i].Weight == weights[j].Weight {
+			return weights[i].StrategyId < weights[j].StrategyId
+		}
+		return weights[i].Weight > weights[j].Weight
+	})
 	return &learningv1.GetWeightsResponse{Weights: weights}, nil
 }
 
@@ -228,14 +272,6 @@ func (s *Service) applyBacktest(rep backtest.Report) {
 		}
 		kept = append(kept, id)
 	}
-	for _, v := range rep.Variants {
-		if !v.Promoted {
-			continue
-		}
-		s.stats[v.Spec.ID] = &stat{
-			n: v.Trades, wins: v.Wins, pnlEMA: v.ReturnPct, excEMA: v.ExcessPct / 100,
-		}
-	}
 	if len(kept) > 0 {
 		s.roster = kept
 	}
@@ -270,5 +306,31 @@ func toProto(rep backtest.Report) *learningv1.BacktestReport {
 		VariantsPromoted: int32(rep.VariantsPromoted), Status: rep.Status,
 		RanAtUnixMs: rep.RanAt.UnixMilli(), NiftyReturnPct: rep.NiftyReturnPct,
 		Variants: vs, Note: rep.Note,
+	}
+}
+
+func closeFromPaper(t *commonv1.PaperTrade, lesson string) learn.Close {
+	mae, mfe, regime, hold := learn.ParseFacts(t.AttributionTags)
+	if hold == 0 && t.ClosedAtUnixMs > t.OpenedAtUnixMs {
+		hold = t.ClosedAtUnixMs - t.OpenedAtUnixMs
+	}
+	if regime == "" || regime == "chop" {
+		if r := learn.Regime(t.NiftyReturn); r != "chop" {
+			regime = r
+		}
+	}
+	return learn.NewClose(t.Id, t.StrategyId, t.Symbol, t.Pnl, t.ExcessReturn, hold, mae, mfe, regime, t.ClosedAtUnixMs, lesson)
+}
+
+func journalFromClose(c learn.Close) *commonv1.JournalEntry {
+	tags := append(learn.FactTags(c.MAE, c.MFE, c.Regime, c.HoldMs), c.Method)
+	return &commonv1.JournalEntry{
+		Id: "j-" + c.ID,
+		Trade: &commonv1.PaperTrade{
+			Id: c.ID, Symbol: c.Symbol, StrategyId: c.StrategyID,
+			Pnl: c.PnL, ExcessReturn: c.Excess, ClosedAtUnixMs: c.ClosedAtMs,
+			Lesson: c.Lesson, AttributionTags: tags,
+		},
+		Lesson: c.Lesson, Tags: tags, TsUnixMs: c.ClosedAtMs,
 	}
 }

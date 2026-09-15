@@ -25,6 +25,16 @@ func TestAttributeLoss(t *testing.T) {
 	}
 }
 
+func TestAttributeKeepsLearnFacts(t *testing.T) {
+	_, tags := Attribute(&commonv1.PaperTrade{
+		Pnl: -10, ExcessReturn: -1,
+		AttributionTags: []string{"mae=-0.02", "mfe=0.01", "regime=chop", "hold_ms=1000"},
+	})
+	if !contains(tags, "mae=-0.02") || !contains(tags, "regime=chop") || !contains(tags, "loss") {
+		t.Fatalf("tags %v", tags)
+	}
+}
+
 func contains(xs []string, want string) bool {
 	for _, x := range xs {
 		if x == want {

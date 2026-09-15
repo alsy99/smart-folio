@@ -1,4 +1,4 @@
-.PHONY: proto tidy test backend web dev-backend
+.PHONY: proto tidy test secrets backend web dev-backend review campaign
 
 export PATH := $(PATH):$(HOME)/go/bin
 export AUTOSTART_CAMPAIGN ?= true
@@ -18,8 +18,19 @@ proto:
 tidy:
 	go mod tidy
 
-test:
-	go test ./...
+secrets:
+	bash scripts/check-secrets.sh
+
+test: secrets
+	go test $$(go list ./... | grep -v /node_modules/)
+	cd apps/web && npm test
+
+review:
+	go run ./cmd/review
+	python3 scripts/review.py
+
+campaign:
+	go run ./cmd/campaign -verify
 
 dev-backend:
 	bash scripts/dev-backend.sh

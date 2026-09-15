@@ -13,11 +13,13 @@ import (
 
 func main() {
 	serve.Logging()
+	slog.SetDefault(slog.Default().With("svc", "learning"))
 	ctx, stop := serve.Context()
 	defer stop()
 	cfg := learning.LoadConfig()
 	svc := learning.New(slog.Default())
 	go svc.Seed(ctx)
+	go svc.Weekly(ctx)
 	if err := serve.GRPC(ctx, cfg.Bind, func(s *grpc.Server) {
 		learningv1.RegisterLearningServiceServer(s, svc)
 	}); err != nil {

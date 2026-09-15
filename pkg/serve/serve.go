@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -20,7 +21,12 @@ func Context() (context.Context, context.CancelFunc) {
 }
 
 func Logging() {
-	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo})))
+	opts := &slog.HandlerOptions{Level: slog.LevelInfo}
+	var h slog.Handler = slog.NewJSONHandler(os.Stderr, opts)
+	if strings.EqualFold(os.Getenv("LOG_FORMAT"), "text") {
+		h = slog.NewTextHandler(os.Stderr, opts)
+	}
+	slog.SetDefault(slog.New(h).With("app", "aperture"))
 	if wd, err := os.Getwd(); err == nil {
 		config.LoadDotEnv(wd + "/.env")
 	}

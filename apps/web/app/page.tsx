@@ -11,7 +11,10 @@ import { SessionIris } from "@/components/desk/session-iris";
 import { DeskTabs, isDeskTab, type DeskTab } from "@/components/desk/tabs";
 import { Button } from "@/components/ui/button";
 import { useDesk } from "@/hooks/use-desk";
-import { inr, pct } from "@/lib/utils";
+import { inr, istStamp, pct, shortSha } from "@/lib/utils";
+import { mockTape } from "@/lib/tape";
+import { heroExcess, heroTape } from "@/lib/hero";
+import { fillAllowed } from "@/lib/session";
 
 function sessionLabel(status?: string, marketOpen?: boolean) {
   if (!status && marketOpen == null) return "—";
@@ -52,8 +55,14 @@ function DeskShell() {
     start,
     kill,
     resume,
+    pub,
   } = desk;
   const open = Boolean(campaign?.marketOpen);
+  const isMock = mockTape(health);
+  const frozen = Boolean(pub?.manifest?.frozen);
+  const lastDay = pub?.days?.length ? pub.days[pub.days.length - 1] : null;
+  const tape = heroTape(health);
+  const niftyHero = isMock ? heroExcess(health, nifty?.excessPct) : lastDay ? pct(lastDay.excessNifty50Pct) : nifty ? pct(nifty.excessPct) : "—";
 
   function setTab(id: DeskTab) {
     const next = new URLSearchParams(searchParams.toString());
@@ -90,8 +99,10 @@ function DeskShell() {
             }}
           />
         </div>
-        <p className="mt-8 text-xs leading-relaxed text-steel md:mt-auto">
-          Paper trading only. Not advice. Live brokerage is off.
+        <p className={`mt-8 text-xs leading-relaxed md:mt-auto ${isMock ? "font-semibold text-down" : "text-steel"}`}>
+          {isMock
+            ? "MOCK TAPE. Not live NSE. Paper PnL is synthetic until an INDstocks token is set."
+            : "Paper trading only. Not advice. Live brokerage is off."}
         </p>
       </aside>
 
@@ -106,15 +117,21 @@ function DeskShell() {
                   {sessionLabel(campaign?.sessionStatus, campaign?.marketOpen)}
                 </p>
                 <p className="mt-1 text-sm whitespace-normal text-steel">
-                  {campaign?.active
-                    ? `Day ${campaign.daysElapsed} of ${campaign.daysTotal}, ${campaign.ticks} ticks, ${campaign.autopilot ? "autopilot on" : "paused"}`
-                    : "No campaign running"}
+                  {frozen && pub
+                    ? `Frozen SHA ${shortSha(pub.manifest.gitSha)} · ${istStamp(pub.manifest.startUnixMs)} → ${istStamp(pub.manifest.endUnixMs)} IST`
+                    : campaign?.active
+                      ? `Day ${campaign.daysElapsed} of ${campaign.daysTotal}, ${campaign.ticks} ticks, ${campaign.autopilot ? "autopilot on" : "paused"} · ${istStamp(campaign.startedAtUnixMs)} → ${istStamp(campaign.endsAtUnixMs)} IST`
+                      : "No campaign running"}
                 </p>
               </div>
             </div>
             <div className="flex flex-wrap items-center gap-2">
               <AdvisorTooltip sentiment={sentiment} />
-              {pending === "restart" ? (
+              {frozen ? (
+                <Button disabled>
+                  Book frozen
+                </Button>
+              ) : pending === "restart" ? (
                 <>
                   <Button variant="danger" onClick={() => { setPending(null); start(); }} disabled={busy}>
                     Confirm Restart
@@ -157,6 +174,26 @@ function DeskShell() {
             </div>
           )}
 
+          {frozen && pub && (
+            <div
+              role="status"
+              className="mt-6 border border-ink/15 bg-paper px-4 py-3 text-sm text-ink"
+            >
+              Public 30-day paper campaign is frozen. Same SHA, settings, universe, and delivery cost model.
+              Reproduce with <span className="font-mono text-xs">{pub.manifest.reproduce}</span>.
+            </div>
+          )}
+
+          {isMock && !err && (
+            <div
+              role="alert"
+              data-testid="mock-tape-banner"
+              className="mt-6 border border-down bg-down px-4 py-3 text-sm font-semibold text-white"
+            >
+              MOCK TAPE — not live NSE. Paper PnL is synthetic until INDSTOCKS_ACCESS_TOKEN is set. Do not read this book as a live India fill.
+            </div>
+          )}
+
           {loading && !portfolio && (
             <p aria-live="polite" className="mt-6 text-sm text-steel">
               Connecting to the desk…
@@ -165,33 +202,69 @@ function DeskShell() {
 
           <section className="mt-6 grid grid-cols-1 gap-6 border-b border-rule pb-6 sm:grid-cols-2 xl:grid-cols-4">
             <Stat
-              label="Paper equity"
-              value={portfolio ? inr(portfolio.equity) : "—"}
-              hint={portfolio ? `Cash ${inr(portfolio.cash)}` : "Awaiting a campaign"}
+              label={frozen ? "Frozen paper equity" : isMock ? "Mock paper equity" : "Paper equity"}
+              value={lastDay ? inr(lastDay.equity) : portfolio ? inr(portfolio.equity) : "—"}
+              hint={
+                frozen
+                  ? lastDay?.halted
+                    ? "Halted · 15% peak-to-trough"
+                    : `Drawdown ${pct(lastDay?.drawdownPct || 0)}`
+                  : isMock
+                    ? "Synthetic. Not live NSE."
+                    : portfolio
+                      ? `Cash ${inr(portfolio.cash)}`
+                      : "Awaiting a campaign"
+              }
+              tone={isMock && !frozen ? "bad" : lastDay?.halted ? "bad" : undefined}
             />
             <Stat
               label="Versus Nifty 50"
-              value={nifty ? pct(nifty.excessPct) : "—"}
-              hint={nifty ? `Annualised ${pct(nifty.excessAnnPct)}` : "Start a campaign"}
-              tone={nifty && nifty.excessPct >= 0 ? "good" : "bad"}
-            />
-            <Stat
-              label="Ten-point track"
-              value={onTrack ? "On track" : "Off pace"}
-              hint={`Beat rate ${nifty ? Math.round((nifty.beatRate || 0) * 100) : 0}% of ticks`}
-              tone={onTrack ? "good" : "warn"}
-            />
-            <Stat
-              label="Window"
-              value={open ? "Fills on" : "Research only"}
+              value={niftyHero}
               hint={
-                health?.indstocks?.mode === "live"
-                  ? "INDstocks tape, positional fills"
-                  : campaign?.clockOverride
-                    ? "Clock override is on"
-                    : "Mock tape until an INDstocks token is set"
+                isMock
+                  ? "Mock tape. Not a live excess vs Nifty."
+                  : lastDay
+                    ? `Nifty 500 ${pct(lastDay.excessNifty500Pct)} · Sensex ${pct(lastDay.excessSensexPct)}`
+                    : nifty
+                      ? `Target, not a promise · annualised ${pct(nifty.excessAnnPct)}`
+                      : "Start a campaign"
               }
-              tone={open ? "good" : "warn"}
+              tone={isMock ? "bad" : (lastDay ? lastDay.excessNifty50Pct : nifty?.excessPct || 0) >= 0 ? "good" : "bad"}
+            />
+            <Stat
+              label={frozen ? "Halt" : "Ten-point track"}
+              value={
+                frozen
+                  ? lastDay?.halted
+                    ? "Halted"
+                    : "Not halted"
+                  : onTrack
+                    ? "On track"
+                    : "Off pace"
+              }
+              hint={
+                frozen && lastDay
+                  ? `Turnover ${pct(lastDay.turnoverPct)} · ${lastDay.fills} fills on last session`
+                  : `Target, not a promise · beat ${nifty ? Math.round((nifty.beatRate || 0) * 100) : 0}% of ticks`
+              }
+              tone={frozen ? (lastDay?.halted ? "bad" : "good") : onTrack ? "good" : "warn"}
+            />
+            <Stat
+              label={tape.label}
+              value={tape.value}
+              hint={
+                isMock
+                  ? tape.hint
+                  : frozen
+                    ? "Deterministic prices.Last. Clone the SHA to replay."
+                    : open && fillAllowed(campaign)
+                      ? "INDstocks tape, positional fills"
+                      : campaign?.clockOverride
+                        ? "Clock override is on"
+                        : "Research only. Market closed — no fills."
+              }
+              testId="hero-tape"
+              tone={isMock ? "bad" : open ? "good" : "warn"}
             />
           </section>
 

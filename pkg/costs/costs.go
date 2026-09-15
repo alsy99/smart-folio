@@ -273,9 +273,9 @@ func NameRoom(equity, held float64) float64 {
 	return room
 }
 
-func BookHalted(equity, start float64) bool {
-	if start <= 0 {
+func BookHalted(equity, peak float64) bool {
+	if peak <= 0 {
 		return false
 	}
-	return (start-equity)/start >= DrawdownHalt
+	return (peak-equity)/peak >= DrawdownHalt
 }
