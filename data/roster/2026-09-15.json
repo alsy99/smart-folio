@@ -13,6 +13,6 @@
   "folds": 2,
   "tape": "indstocks-1d",
   "days": 1240,
-  "gitSha": "fbf3032281ae023708343d1e4222c585f321590d-dirty",
+  "gitSha": "ffdc18e0f81115b289d4a9f9e0b22e0e3ec29176",
   "note": "Walk-forward OOS gate: excess\u003e0 vs Nifty AND return\u003e0, both net of delivery costs, ≥30 OOS trades, maxDD≤15%. At most 2 new admissions per weekly snapshot. roster trades; failing are shipped defaults that missed the gate on this tape and get weight 0 on the paper book."
 }
