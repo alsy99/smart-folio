@@ -74,6 +74,9 @@ message InvestigationReport {
   string thesis = 15;
   string risks = 16;
   string status = 17;
+  // research_mode is how the thesis was produced: heuristic, llm, llm-text,
+  // cache. Only llm-mode reports may tilt the satellite slice.
+  string research_mode = 18;
 }
 
 message BenchmarkPoint {

@@ -20,6 +20,7 @@ import (
 	"aperture/pkg/marketclock"
 	"aperture/pkg/research"
 	"aperture/pkg/strategies"
+	"aperture/pkg/tilt"
 	"aperture/pkg/universe"
 )
 
@@ -29,6 +30,10 @@ type bookPlan struct {
 	standAside map[string]bool
 	weights    map[string]float64
 	invID      map[string]string
+	// satScore is the as-of LLM sentiment score that tilts the satellite
+	// slice (pkg/tilt). 0 when the roster is empty, the LLM is off or over
+	// budget, or no LLM-mode report is known at the bar. Core ignores it.
+	satScore float64
 }
 
 func (s *Service) Tick(ctx context.Context, _ *tradingv1.TickRequest) (*tradingv1.TickResponse, error) {
@@ -145,6 +150,7 @@ func (s *Service) Plan(ctx context.Context) error {
 		}
 		picked[sym] = s.bestSignal(ctx, sym, scoreMap[sym], baseW)
 	}
+	satScore := s.satelliteScore(bar, reports, baseW)
 
 	asideN := 0
 	for _, v := range standAside {
@@ -154,12 +160,13 @@ func (s *Service) Plan(ctx context.Context) error {
 	}
 	s.mu.Lock()
 	s.plan = bookPlan{
-		at: s.now(), signals: picked, standAside: standAside, weights: baseW, invID: invID,
+		at: s.now(), signals: picked, standAside: standAside, weights: baseW, invID: invID, satScore: satScore,
 	}
 	s.mu.Unlock()
 	s.log.Info("strategy plan",
 		"names", len(picked),
 		"stand_aside", asideN,
+		"satellite_tilt", tilt.Clip(satScore),
 		"session", marketclock.SessionStatus(s.now()),
 	)
 	go s.analyzePicks(picked, newsBySym)
@@ -228,7 +235,7 @@ func (s *Service) Execute(ctx context.Context) (*tradingv1.TickResponse, error) 
 		for _, sym := range universe.EquitySymbols() {
 			// IPS satellite cap: sleeve notional ≤ SatellitePct × equity.
 			// Under a 100% core there is no satellite at all.
-			satRoom := s.satelliteRoomLocked(snap, last)
+			satRoom := s.satelliteRoomLocked(snap, last, plan.satScore)
 			if satRoom < costs.MinNameNotional {
 				if !s.satCapLogged {
 					s.satCapLogged = true

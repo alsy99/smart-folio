@@ -9,6 +9,8 @@ import (
 	"aperture/internal/policy"
 	"aperture/pkg/broker"
 	"aperture/pkg/costs"
+	"aperture/pkg/llm"
+	"aperture/pkg/tilt"
 )
 
 const LogSatelliteCap = "SATELLITE_CAP"
@@ -32,14 +34,54 @@ func (s *Service) coreValueLocked(last map[string]float64) float64 {
 }
 
 // satelliteRoomLocked is how much more satellite notional the IPS allows:
-// SatellitePct × equity minus what the satellite already holds.
-func (s *Service) satelliteRoomLocked(snap broker.Snapshot, last map[string]float64) float64 {
+// the tilted slice × equity minus what the satellite already holds. The
+// tilt only applies under an IPS; the legacy all-satellite book keeps the
+// gross cap.
+func (s *Service) satelliteRoomLocked(snap broker.Snapshot, last map[string]float64, score float64) float64 {
+	pct := s.satellitePct()
+	if s.ips != nil {
+		pct = tilt.Effective(s.ips.SatellitePct, s.ips.SatellitePct, score)
+	}
 	held := snap.Gross - s.coreValueLocked(last)
-	room := snap.Equity*s.satellitePct() - held
+	room := snap.Equity*pct - held
 	if room < 0 {
 		return 0
 	}
 	return room
+}
+
+const LogLLMBudget = "LLM_BUDGET"
+
+// satelliteScore is the sentiment input to the satellite tilt for this
+// bar. It is zero, and the tilt a no-op, when no method carries weight
+// (nothing to tilt), when the LLM's IST-day budget is spent (logged once
+// per session as LLM_BUDGET), or when no LLM-mode report is known at the
+// bar. Reports have already passed pkg/asof, so a headline published
+// after the bar is not in the slice.
+func (s *Service) satelliteScore(bar time.Time, reports []*commonv1.InvestigationReport, weights map[string]float64) float64 {
+	roster := false
+	for _, w := range weights {
+		if w > 0 {
+			roster = true
+			break
+		}
+	}
+	if !roster {
+		return 0
+	}
+	day := llm.ISTDay(bar)
+	st := llm.LoadDay(s.invDir(), day)
+	if st.MaxCalls > 0 && st.MaxTokens > 0 && (st.Calls >= st.MaxCalls || st.Tokens >= st.MaxTokens) {
+		s.mu.Lock()
+		logIt := s.budgetLogDay != day
+		s.budgetLogDay = day
+		s.mu.Unlock()
+		if logIt {
+			s.log.Warn(LogLLMBudget, "day", day, "calls", st.Calls, "max_calls", st.MaxCalls, "tokens", st.Tokens, "max_tokens", st.MaxTokens, "tilt", 0)
+		}
+		return 0
+	}
+	return tilt.Score(reports)
 }
 
 // coreInputLocked assembles the allocator's view of the book. Marks are

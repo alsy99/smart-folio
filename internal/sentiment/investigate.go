@@ -125,7 +125,7 @@ func investigate(ctx context.Context, completer llm.Completer, desk *research.De
 		EventType: event, Stance: stance, Score: score, Confidence: conf,
 		Corroboration: int32(len(providers)), Horizon: horizon, StrategyImplications: tilts,
 		StandAside: standAside, Sources: sources, AnalyzedAtUnixMs: asOf.UnixMilli(),
-		Mode: mode, Thesis: thesis, Risks: risks, Status: "completed",
+		Mode: mode, Thesis: thesis, Risks: risks, Status: "completed", ResearchMode: note.Mode,
 	}
 }
 

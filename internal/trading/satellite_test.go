@@ -57,8 +57,13 @@ func repoRoot(t *testing.T) string {
 // TestCheckedInRosterGivesZeroSatelliteFills replays a session on the
 // shipped data/roster snapshot: roster [] and six failing defaults. The
 // satellite must not fill; with an IPS the core builds regardless.
+func loadShippedRoster(t *testing.T) (backtest.RosterSnapshot, string, error) {
+	t.Helper()
+	return backtest.LoadLatestRoster(filepath.Join(repoRoot(t), "data", "roster"))
+}
+
 func TestCheckedInRosterGivesZeroSatelliteFills(t *testing.T) {
-	snap, file, err := backtest.LoadLatestRoster(filepath.Join(repoRoot(t), "data", "roster"))
+	snap, file, err := loadShippedRoster(t)
 	if err != nil {
 		t.Fatal(err)
 	}

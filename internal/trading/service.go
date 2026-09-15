@@ -98,6 +98,7 @@ type Service struct {
 	lastSatFills  int
 	lastCorePlan  policy.Plan
 	satCapLogged  bool
+	budgetLogDay  string
 }
 
 type campaign struct {
