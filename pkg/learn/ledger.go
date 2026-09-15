@@ -154,7 +154,7 @@ func EqualSnapshot(ids []string, now time.Time) Snapshot {
 	}
 	return Snapshot{
 		AsOf:    now.UTC().Format(time.RFC3339),
-		NextDue: now.UTC().Add(Period).Format(time.RFC3339),
+		NextDue: now.UTC().Add(ReviewEvery).Format(time.RFC3339),
 		Weights: rows,
 		Moved:   false,
 		Note:    "equal weights; weekly job has not run",

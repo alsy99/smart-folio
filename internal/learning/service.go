@@ -204,22 +204,51 @@ func (s *Service) maybeWeekly() {
 	}
 }
 
-// RunWeekly is the only path that may rewrite weights.json.
+// RunWeekly is the only path that may rewrite weights.json. It reviews
+// fill tags and sleeve periods together; core periods are read, never
+// weighted.
 func (s *Service) RunWeekly(force bool) (learn.Snapshot, error) {
 	closes, err := learn.LoadCloses(s.dir)
+	if err != nil {
+		return learn.Snapshot{}, err
+	}
+	periods, err := learn.LoadPeriods(s.dir)
 	if err != nil {
 		return learn.Snapshot{}, err
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	now := s.now().UTC()
-	next := learn.ApplyWeekly(s.ids(), s.snap, closes, now, force)
+	next := learn.ApplyReview(s.ids(), s.snap, closes, periods, now, force)
 	if err := learn.SaveSnapshot(s.dir, next); err != nil {
 		return learn.Snapshot{}, err
 	}
 	s.snap = next
-	s.log.Info("weekly review", "moved", next.Moved, "note", next.Note, "closes", len(closes))
+	s.log.Info("weekly review", "moved", next.Moved, "note", next.Note, "closes", len(closes), "periods", len(periods))
 	return next, nil
+}
+
+// RecordPeriod appends a sleeve period to periods.jsonl. It never writes
+// weights: like a fill, one period is evidence, not a decision.
+func (s *Service) RecordPeriod(_ context.Context, req *learningv1.RecordPeriodRequest) (*learningv1.RecordPeriodResponse, error) {
+	p := req.GetPeriod()
+	if p == nil || p.IpsId == "" || p.Sleeve == "" {
+		return &learningv1.RecordPeriodResponse{}, nil
+	}
+	rec := learn.Period{
+		IPSID: p.IpsId, Sleeve: p.Sleeve, Method: p.Method,
+		From: time.UnixMilli(p.FromUnixMs).UTC(), To: time.UnixMilli(p.ToUnixMs).UTC(),
+		PnLAfterCosts: p.PnlAfterCosts, ExcessVsIPS: p.ExcessVsIpsPp, ExcessVsNifty: p.ExcessVsNiftyPp,
+		MaxDD: p.MaxDd, Fills: int(p.Fills), MAE: p.Mae, MFE: p.Mfe,
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := learn.AppendPeriod(s.dir, rec); err != nil {
+		s.log.Error("append period", "err", err)
+		return nil, err
+	}
+	s.log.Info("period recorded", "ips", rec.IPSID, "sleeve", rec.Sleeve, "method", rec.Method, "from", rec.From.Format("2006-01-02"), "to", rec.To.Format("2006-01-02"), "pnl", rec.PnLAfterCosts, "xs_ips_pp", rec.ExcessVsIPS, "fills", rec.Fills)
+	return &learningv1.RecordPeriodResponse{}, nil
 }
 
 func (s *Service) RecordTrade(_ context.Context, req *learningv1.RecordTradeRequest) (*learningv1.RecordTradeResponse, error) {

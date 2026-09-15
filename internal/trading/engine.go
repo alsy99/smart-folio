@@ -17,6 +17,7 @@ import (
 	"aperture/pkg/config"
 	"aperture/pkg/costs"
 	"aperture/pkg/excess"
+	"aperture/pkg/learn"
 	"aperture/pkg/marketclock"
 	"aperture/pkg/research"
 	"aperture/pkg/strategies"
@@ -44,6 +45,11 @@ func (s *Service) Tick(ctx context.Context, _ *tradingv1.TickRequest) (*tradingv
 	}
 	now := s.now()
 	if now.After(s.camp.end) {
+		// The tail period closes once at the last marks the book saw.
+		if s.period != nil && s.lastMarks != nil {
+			s.periodCloseLocked(now, s.lastMarks, "campaign end")
+			s.period = nil
+		}
 		s.mu.Unlock()
 		return &tradingv1.TickResponse{Skipped: true, Reason: "campaign ended"}, nil
 	}
@@ -191,6 +197,10 @@ func (s *Service) Execute(ctx context.Context) (*tradingv1.TickResponse, error) 
 	turnover := 0.0
 	s.rollSessionLocked(now)
 	s.updateMarksLocked(last)
+	s.lastMarks = last
+	if s.period == nil {
+		s.periodOpenLocked(now, last)
+	}
 	niftyRet := 0.0
 	if st := s.benchStart["NIFTY50"]; st > 0 && last["NIFTY50"] > 0 {
 		niftyRet = last["NIFTY50"]/st - 1
@@ -305,6 +315,7 @@ func (s *Service) Execute(ctx context.Context) (*tradingv1.TickResponse, error) 
 			cost := qty * fillPx
 			charge := costs.RoundTripBuy(cost)
 			s.cash -= cost + charge.Total
+			s.periodSatBuy(learn.MethodOf(sig.StrategyID), cost+charge.Total)
 			s.seq++
 			inv := plan.invID[sym]
 			if inv == "" {
@@ -336,6 +347,7 @@ func (s *Service) Execute(ctx context.Context) (*tradingv1.TickResponse, error) 
 		}
 	}
 
+	s.periodMarkLocked(last)
 	s.camp.ticks++
 	s.lastTurnover = turnover
 	s.lastSatFills = fills

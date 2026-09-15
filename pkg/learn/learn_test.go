@@ -67,7 +67,7 @@ func TestTwentyNegativeTagShrinksOnWeeklyOnly(t *testing.T) {
 	if SnapshotMap(held)[strategies.Momentum1d] != eq[strategies.Momentum1d] {
 		t.Fatal("mid-week apply moved a weight")
 	}
-	weekly := ApplyWeekly(ids, boot, closes, now.Add(Period), false)
+	weekly := ApplyWeekly(ids, boot, closes, now.Add(ReviewEvery), false)
 	if !weekly.Moved {
 		t.Fatal("weekly job should shrink the negative tag")
 	}

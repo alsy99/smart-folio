@@ -92,6 +92,8 @@ func (s *Service) StartCampaign(ctx context.Context, req *tradingv1.StartCampaig
 	s.coreLastRebal = ""
 	s.corePending = false
 	s.coreHaltLog = false
+	s.period = nil
+	s.periods = nil
 	s.mu.Unlock()
 	s.captureBenchStart(ctx)
 	s.log.Info("campaign started", "days", days)

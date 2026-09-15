@@ -77,6 +77,9 @@ type lnStub struct{}
 func (lnStub) RecordTrade(context.Context, *learningv1.RecordTradeRequest, ...grpc.CallOption) (*learningv1.RecordTradeResponse, error) {
 	return &learningv1.RecordTradeResponse{}, nil
 }
+func (lnStub) RecordPeriod(context.Context, *learningv1.RecordPeriodRequest, ...grpc.CallOption) (*learningv1.RecordPeriodResponse, error) {
+	return &learningv1.RecordPeriodResponse{}, nil
+}
 func (lnStub) ListJournal(context.Context, *learningv1.ListJournalRequest, ...grpc.CallOption) (*learningv1.ListJournalResponse, error) {
 	return &learningv1.ListJournalResponse{}, nil
 }

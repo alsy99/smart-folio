@@ -12,7 +12,33 @@ service LearningService {
   rpc GetWeights(GetWeightsRequest) returns (GetWeightsResponse);
   rpc RunBacktest(RunBacktestRequest) returns (BacktestReport);
   rpc GetBacktest(GetBacktestRequest) returns (BacktestReport);
+  // RecordPeriod appends one sleeve-period result to periods.jsonl. Like
+  // RecordTrade it never writes weights; only the scheduled review does.
+  rpc RecordPeriod(RecordPeriodRequest) returns (RecordPeriodResponse);
 }
+
+// Period is one sleeve's result over one rebalance period, judged against
+// the client's IPS benchmark after costs. Mirrors pkg/learn.Period.
+message Period {
+  string ips_id = 1;
+  string sleeve = 2;   // core | satellite
+  string method = 3;   // core, or the satellite method
+  int64 from_unix_ms = 4;
+  int64 to_unix_ms = 5;
+  double pnl_after_costs = 6;
+  double excess_vs_ips_pp = 7;
+  double excess_vs_nifty_pp = 8;
+  double max_dd = 9;
+  int32 fills = 10;
+  double mae = 11;
+  double mfe = 12;
+}
+
+message RecordPeriodRequest {
+  Period period = 1;
+}
+
+message RecordPeriodResponse {}
 
 message RunBacktestRequest {
   int32 years = 1;

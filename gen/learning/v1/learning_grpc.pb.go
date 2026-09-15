@@ -19,11 +19,12 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	LearningService_RecordTrade_FullMethodName = "/learning.v1.LearningService/RecordTrade"
-	LearningService_ListJournal_FullMethodName = "/learning.v1.LearningService/ListJournal"
-	LearningService_GetWeights_FullMethodName  = "/learning.v1.LearningService/GetWeights"
-	LearningService_RunBacktest_FullMethodName = "/learning.v1.LearningService/RunBacktest"
-	LearningService_GetBacktest_FullMethodName = "/learning.v1.LearningService/GetBacktest"
+	LearningService_RecordTrade_FullMethodName  = "/learning.v1.LearningService/RecordTrade"
+	LearningService_ListJournal_FullMethodName  = "/learning.v1.LearningService/ListJournal"
+	LearningService_GetWeights_FullMethodName   = "/learning.v1.LearningService/GetWeights"
+	LearningService_RunBacktest_FullMethodName  = "/learning.v1.LearningService/RunBacktest"
+	LearningService_GetBacktest_FullMethodName  = "/learning.v1.LearningService/GetBacktest"
+	LearningService_RecordPeriod_FullMethodName = "/learning.v1.LearningService/RecordPeriod"
 )
 
 // LearningServiceClient is the client API for LearningService service.
@@ -35,6 +36,9 @@ type LearningServiceClient interface {
 	GetWeights(ctx context.Context, in *GetWeightsRequest, opts ...grpc.CallOption) (*GetWeightsResponse, error)
 	RunBacktest(ctx context.Context, in *RunBacktestRequest, opts ...grpc.CallOption) (*BacktestReport, error)
 	GetBacktest(ctx context.Context, in *GetBacktestRequest, opts ...grpc.CallOption) (*BacktestReport, error)
+	// RecordPeriod appends one sleeve-period result to periods.jsonl. Like
+	// RecordTrade it never writes weights; only the scheduled review does.
+	RecordPeriod(ctx context.Context, in *RecordPeriodRequest, opts ...grpc.CallOption) (*RecordPeriodResponse, error)
 }
 
 type learningServiceClient struct {
@@ -95,6 +99,16 @@ func (c *learningServiceClient) GetBacktest(ctx context.Context, in *GetBacktest
 	return out, nil
 }
 
+func (c *learningServiceClient) RecordPeriod(ctx context.Context, in *RecordPeriodRequest, opts ...grpc.CallOption) (*RecordPeriodResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RecordPeriodResponse)
+	err := c.cc.Invoke(ctx, LearningService_RecordPeriod_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // LearningServiceServer is the server API for LearningService service.
 // All implementations must embed UnimplementedLearningServiceServer
 // for forward compatibility.
@@ -104,6 +118,9 @@ type LearningServiceServer interface {
 	GetWeights(context.Context, *GetWeightsRequest) (*GetWeightsResponse, error)
 	RunBacktest(context.Context, *RunBacktestRequest) (*BacktestReport, error)
 	GetBacktest(context.Context, *GetBacktestRequest) (*BacktestReport, error)
+	// RecordPeriod appends one sleeve-period result to periods.jsonl. Like
+	// RecordTrade it never writes weights; only the scheduled review does.
+	RecordPeriod(context.Context, *RecordPeriodRequest) (*RecordPeriodResponse, error)
 	mustEmbedUnimplementedLearningServiceServer()
 }
 
@@ -128,6 +145,9 @@ func (UnimplementedLearningServiceServer) RunBacktest(context.Context, *RunBackt
 }
 func (UnimplementedLearningServiceServer) GetBacktest(context.Context, *GetBacktestRequest) (*BacktestReport, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetBacktest not implemented")
+}
+func (UnimplementedLearningServiceServer) RecordPeriod(context.Context, *RecordPeriodRequest) (*RecordPeriodResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method RecordPeriod not implemented")
 }
 func (UnimplementedLearningServiceServer) mustEmbedUnimplementedLearningServiceServer() {}
 func (UnimplementedLearningServiceServer) testEmbeddedByValue()                         {}
@@ -240,6 +260,24 @@ func _LearningService_GetBacktest_Handler(srv interface{}, ctx context.Context, 
 	return interceptor(ctx, in, info, handler)
 }
 
+func _LearningService_RecordPeriod_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RecordPeriodRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(LearningServiceServer).RecordPeriod(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: LearningService_RecordPeriod_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(LearningServiceServer).RecordPeriod(ctx, req.(*RecordPeriodRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // LearningService_ServiceDesc is the grpc.ServiceDesc for LearningService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -266,6 +304,10 @@ var LearningService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetBacktest",
 			Handler:    _LearningService_GetBacktest_Handler,
+		},
+		{
+			MethodName: "RecordPeriod",
+			Handler:    _LearningService_RecordPeriod_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

@@ -15,6 +15,7 @@ import (
 	"aperture/pkg/config"
 	"aperture/pkg/costs"
 	"aperture/pkg/ips"
+	"aperture/pkg/learn"
 	"aperture/pkg/live"
 	"aperture/pkg/llm"
 	"aperture/pkg/research"
@@ -99,6 +100,12 @@ type Service struct {
 	lastCorePlan  policy.Plan
 	satCapLogged  bool
 	budgetLogDay  string
+	// period is the open rebalance period under the IPS; periods are the
+	// rows already booked this campaign. lastMarks closes the tail period
+	// when the campaign ends between executes.
+	period    *periodTrack
+	periods   []learn.Period
+	lastMarks map[string]float64
 }
 
 type campaign struct {

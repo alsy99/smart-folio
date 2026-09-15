@@ -86,7 +86,7 @@ func TestWeeklyScheduleShrinksNegativeTag(t *testing.T) {
 	if weightOf(t, s, strategies.Momentum1d) != eq {
 		t.Fatal("mid-week RunWeekly moved weights")
 	}
-	s.now = func() time.Time { return boot.Add(learn.Period) }
+	s.now = func() time.Time { return boot.Add(learn.ReviewEvery) }
 	done, err := s.RunWeekly(false)
 	if err != nil {
 		t.Fatal(err)

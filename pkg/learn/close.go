@@ -10,10 +10,10 @@ import (
 )
 
 const (
-	MinN      = 20
-	Shrink    = 0.5
-	MinWeight = 0.05
-	Period    = 7 * 24 * time.Hour
+	MinN        = 20
+	Shrink      = 0.5
+	MinWeight   = 0.05
+	ReviewEvery = 7 * 24 * time.Hour
 
 	ClosesFile  = "closes.jsonl"
 	WeightsFile = "weights.json"

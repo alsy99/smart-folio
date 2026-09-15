@@ -91,6 +91,7 @@ func (s *Service) closeLocked(t *commonv1.PaperTrade, px, niftyRet, adv float64)
 		mae, mfe = e.mae, e.mfe
 		delete(s.exc, t.Id)
 	}
+	s.periodSatClose(learn.MethodOf(t.StrategyId), proceeds-charge.Total, mae, mfe)
 	t.AttributionTags = append(learn.FactTags(mae, mfe, learn.Regime(t.NiftyReturn), hold), t.AttributionTags...)
 	if t.Lesson != "" {
 		t.Lesson += "; "

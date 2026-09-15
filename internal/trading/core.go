@@ -162,6 +162,13 @@ func (s *Service) coreLocked(ctx context.Context, now time.Time, last map[string
 	plan := policy.Rebalance(in)
 	s.lastCorePlan = plan
 	date := policy.SessionDate(now)
+	// A calendar rebalance session closes the period that ran since the
+	// last one, at this session's marks and before its tickets. The
+	// initial build and pending work are not period boundaries; a halted
+	// month still books its period.
+	if in.LastRebalance != "" && in.LastRebalance != date && in.Cal.IsRebalanceSession(date, in.IPS.Rebalance) {
+		s.periodCloseLocked(now, last, "rebalance "+date)
+	}
 	if plan.Halted {
 		// The broker logs MAX_DRAWDOWN once for the book; this is the core's
 		// own once-per-halt note that it is holding, not rebalancing.
@@ -207,6 +214,7 @@ func (s *Service) buyCoreLocked(t policy.Ticket, px float64) {
 	cost := t.Qty * t.Price
 	charge := costs.RoundTripBuy(cost)
 	s.cash -= cost + charge.Total
+	s.periodCoreFlow(-(cost + charge.Total))
 	s.dayBuys += cost
 	s.coreQty[t.Symbol] += t.Qty
 	p := s.pos[t.Symbol]
@@ -230,6 +238,7 @@ func (s *Service) sellCoreLocked(t policy.Ticket, px float64) {
 	}
 	charge := costs.RoundTripSell(buyNotional, t.Notional)
 	s.cash += t.Notional - charge.Total
+	s.periodCoreFlow(t.Notional - charge.Total)
 	s.coreQty[t.Symbol] -= t.Qty
 	if s.coreQty[t.Symbol] <= 0 {
 		delete(s.coreQty, t.Symbol)
