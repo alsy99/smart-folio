@@ -27,4 +27,11 @@ func TestHeuristicFallback(t *testing.T) {
 	if !strings.Contains(strings.ToLower(resp.Reply), "excess") {
 		t.Fatalf("reply %q", resp.Reply)
 	}
+	risk, err := svc.Chat(context.Background(), &advisorv1.ChatRequest{Message: "what is the risk halt?"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(risk.Reply, "15%") {
+		t.Fatalf("risk reply %q", risk.Reply)
+	}
 }

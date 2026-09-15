@@ -8,7 +8,7 @@ import (
 
 func TestAttributeWinWithExcess(t *testing.T) {
 	lesson, tags := Attribute(&commonv1.PaperTrade{
-		StrategyId: "momentum_5m", Pnl: 1200, ExcessReturn: 0.4,
+		StrategyId: "momentum_1d", Pnl: 1200, ExcessReturn: 0.4,
 	})
 	if lesson == "" {
 		t.Fatal("empty lesson")

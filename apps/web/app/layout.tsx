@@ -17,7 +17,7 @@ const serif = Literata({
 
 export const metadata: Metadata = {
   title: "Aperture",
-  description: "NSE paper book. Fills only while the session is open.",
+  description: "NSE positional cash paper book versus Nifty. Fills only while the session is open.",
 };
 
 export const viewport: Viewport = {

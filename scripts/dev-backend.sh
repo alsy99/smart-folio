@@ -5,6 +5,7 @@ cd "$ROOT"
 mkdir -p "$ROOT/pids" "$ROOT/data"
 export AUTOSTART_CAMPAIGN="${AUTOSTART_CAMPAIGN:-true}"
 export INVESTIGATION_LLM="${INVESTIGATION_LLM:-true}"
+export SCALP_MODE="${SCALP_MODE:-false}"
 export PATH="$PATH:$(go env GOPATH)/bin"
 
 # Paper fills follow NSE 09:15–15:30 IST unless MARKET_CLOCK_OVERRIDE=open.
@@ -23,7 +24,7 @@ if [[ -z "${INDSTOCKS_API_KEY:-}" && -n "${INDMONEY_CLIENT_ID:-}" ]]; then
 fi
 
 echo "keys: newsapi=${NEWSAPI_KEY:+yes} google=${GOOGLE_API_KEY:+yes} openai=${OPENAI_API_KEY:+yes} groq=${GROQ_API_KEY:+yes} mistral=${MISTRAL_API_KEY:+yes} openrouter=${OPENROUTER_API_KEY:+yes} nvidia=${NVIDIA_API_KEY:+yes} zai=${ZAI_API_KEY:+yes} indstocks=${INDSTOCKS_ACCESS_TOKEN:+yes}"
-echo "clock: nse-hours override=${MARKET_CLOCK_OVERRIDE:-off} investigation_llm=${INVESTIGATION_LLM:-true}"
+echo "clock: nse-hours override=${MARKET_CLOCK_OVERRIDE:-off} investigation_llm=${INVESTIGATION_LLM:-true} scalp=${SCALP_MODE:-false}"
 
 free_port() {
   local port="$1"

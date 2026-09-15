@@ -50,9 +50,9 @@ type Input struct {
 
 const systemPrompt = `You are the research desk for Aperture, an India NSE paper-trading lab. Not financial advice, not a live broker.
 You receive (1) a qualitative fundamental card that is a reference briefing, NOT live filings, (2) computed technicals on the desk tape (INDstocks when a token is set, otherwise synthetic), (3) optional news.
-Reason step by step: what the business is, what the tape is doing, whether news is material or mis-tagged, then a conclusion for a paper book vs Nifty.
+Reason step by step: what the business is, what the tape is doing, whether news is material or mis-tagged, then a conclusion for a positional paper book vs Nifty (days to weeks, not a scalp).
 Reply with JSON only:
-{"stance":"bullish|bearish|mixed","horizon":"intraday|swing|position","stand_aside":false,"fundamental":"2-3 sentences","technical":"2-3 sentences","conclusion":"2-3 sentences on what the paper book should do and why","risks":"main ways this call is wrong"}`
+{"stance":"bullish|bearish|mixed","horizon":"swing|position","stand_aside":false,"fundamental":"2-3 sentences","technical":"2-3 sentences","conclusion":"2-3 sentences on what the paper book should do and why","risks":"main ways this call is wrong"}`
 
 var (
 	gate     = make(chan struct{}, 1)
@@ -82,9 +82,9 @@ func Heuristic(in Input) Note {
 	case in.Direction < 0 || tech.Trend == "downtrend":
 		stance = "bearish"
 	}
-	horizon := "swing"
+	horizon := "position"
 	if tech.Setup == "breakout / range high" {
-		horizon = "intraday"
+		horizon = "swing"
 	}
 	fund := card.Summary()
 	technical := tech.Summary()

@@ -3,18 +3,17 @@ package strategies
 import "math"
 
 const (
-	SMACross15m     = "sma_cross_15m"
-	Momentum5m      = "momentum_5m"
-	MeanReversion15 = "mean_reversion_15m"
-	Breakout1h      = "breakout_1h"
+	SMACross1d      = "sma_cross_1d"
+	Momentum1d      = "momentum_1d"
+	MeanReversion1d = "mean_reversion_1d"
+	Breakout1d      = "breakout_1d"
 	SwingDaily      = "swing_daily"
 	SentimentTilt   = "sentiment_tilt"
-	OpeningRange    = "opening_range"
 )
 
 func IDs() []string {
 	return []string{
-		SMACross15m, Momentum5m, MeanReversion15, Breakout1h, SwingDaily, SentimentTilt, OpeningRange,
+		SMACross1d, Momentum1d, MeanReversion1d, Breakout1d, SwingDaily, SentimentTilt,
 	}
 }
 

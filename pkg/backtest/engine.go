@@ -75,10 +75,10 @@ func window(closes []float64, i, n int) strategies.Window {
 func simulate(spec strategies.Spec, closes []float64, nifty []float64) Variant {
 	hold := 5
 	if spec.Timeframe == "1w" {
-		hold = 10
+		hold = 15
 	}
-	if spec.Timeframe == "1d" || spec.Timeframe == "1h" {
-		hold = 7
+	if spec.Timeframe == "1d" {
+		hold = 10
 	}
 	cash := costs.StartCash
 	qty := 0.0
@@ -97,10 +97,11 @@ func simulate(spec strategies.Spec, closes []float64, nifty []float64) Variant {
 		w := window(closes, i, need+2)
 		sig := strategies.Evaluate(spec, "BT", w, 0)
 		px := closes[i]
+		adv := costs.ADV(closes[:i+1], 20)
 		if qty > 0 && (sig.Direction <= 0 || i-entryI >= hold) {
-			exit := costs.SellFill(px)
-			proceeds := qty * exit
-			cash += proceeds - costs.Commission(proceeds)
+			exit, proceeds := costs.SellFill(px, qty, adv)
+			charge := costs.RoundTripSell(qty*entry, proceeds)
+			cash += proceeds - charge.Total
 			pnl := (exit - entry) * qty
 			pnlSum += pnl
 			trades++
@@ -110,7 +111,7 @@ func simulate(spec strategies.Spec, closes []float64, nifty []float64) Variant {
 			qty = 0
 		}
 		if qty == 0 && sig.Direction > 0 && sig.Score >= 0.25 {
-			fill := costs.BuyFill(px)
+			fill := costs.BuyFill(px, 1, adv)
 			notional := cash * 0.2
 			if notional > cash*0.9 {
 				notional = cash * 0.9
@@ -119,7 +120,8 @@ func simulate(spec strategies.Spec, closes []float64, nifty []float64) Variant {
 			if q < 1 {
 				continue
 			}
-			cost := q*fill + costs.Commission(q*fill)
+		charge := costs.RoundTripBuy(q * fill, q)
+		cost := q*fill + charge.Total
 			if cost > cash {
 				continue
 			}
@@ -131,8 +133,10 @@ func simulate(spec strategies.Spec, closes []float64, nifty []float64) Variant {
 	}
 	if qty > 0 {
 		px := closes[len(closes)-1]
-		exit := costs.SellFill(px)
-		cash += qty*exit - costs.Commission(qty*exit)
+		adv := costs.ADV(closes, 20)
+		exit, proceeds := costs.SellFill(px, qty, adv)
+		charge := costs.RoundTripSell(qty*entry, proceeds)
+		cash += proceeds - charge.Total
 		pnl := (exit - entry) * qty
 		pnlSum += pnl
 		trades++

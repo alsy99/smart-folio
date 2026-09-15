@@ -51,9 +51,9 @@ func investigate(ctx context.Context, llm Completer, ns []article, mode, id stri
 	if conf < 0.25 {
 		conf = 0.25
 	}
-	horizon := "swing"
+	horizon := "position"
 	if strings.Contains(low, "open") || event == "flow" {
-		horizon = "intraday"
+		horizon = "swing"
 	}
 	if event == "guidance" || event == "regulation" {
 		horizon = "position"
@@ -175,21 +175,21 @@ func classifyStance(low string) (string, float64) {
 
 func mapTilts(event string, score float64, standAside bool) []*commonv1.StrategyTilt {
 	if standAside {
-		return []*commonv1.StrategyTilt{{StrategyId: strategies.MeanReversion15, Tilt: 0, Reason: "stand aside on unconfirmed tape"}}
+		return []*commonv1.StrategyTilt{{StrategyId: strategies.MeanReversion1d, Tilt: 0, Reason: "stand aside on unconfirmed tape"}}
 	}
 	var out []*commonv1.StrategyTilt
 	if score > 0.1 && (event == "earnings" || event == "product" || event == "guidance") {
 		out = append(out,
-			&commonv1.StrategyTilt{StrategyId: strategies.Momentum5m, Tilt: 0.35, Reason: "confirmed constructive tape"},
-			&commonv1.StrategyTilt{StrategyId: strategies.Breakout1h, Tilt: 0.25, Reason: "news can fuel range break"},
+			&commonv1.StrategyTilt{StrategyId: strategies.Momentum1d, Tilt: 0.35, Reason: "confirmed constructive tape"},
+			&commonv1.StrategyTilt{StrategyId: strategies.Breakout1d, Tilt: 0.25, Reason: "news can fuel range break"},
 			&commonv1.StrategyTilt{StrategyId: strategies.SwingDaily, Tilt: 0.2, Reason: "swing continuation"},
 		)
 	}
 	if event == "rumor" || score < -0.1 {
-		out = append(out, &commonv1.StrategyTilt{StrategyId: strategies.MeanReversion15, Tilt: 0.3, Reason: "fade noisy extension"})
+		out = append(out, &commonv1.StrategyTilt{StrategyId: strategies.MeanReversion1d, Tilt: 0.3, Reason: "fade noisy extension"})
 	}
 	if event == "flow" {
-		out = append(out, &commonv1.StrategyTilt{StrategyId: strategies.OpeningRange, Tilt: 0.4, Reason: "open flow shock"})
+		out = append(out, &commonv1.StrategyTilt{StrategyId: strategies.Breakout1d, Tilt: 0.25, Reason: "flow into the daily range"})
 	}
 	out = append(out, &commonv1.StrategyTilt{StrategyId: strategies.SentimentTilt, Tilt: score, Reason: "investigation overlay"})
 	return out

@@ -186,7 +186,7 @@ function DeskShell() {
               value={open ? "Fills on" : "Research only"}
               hint={
                 health?.indstocks?.mode === "live"
-                  ? "INDstocks tape, paper fills"
+                  ? "INDstocks tape, positional fills"
                   : campaign?.clockOverride
                     ? "Clock override is on"
                     : "Mock tape until an INDstocks token is set"

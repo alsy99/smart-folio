@@ -21,7 +21,7 @@ export function BookPanel({ desk }: { desk: ReturnType<typeof useDesk> }) {
         <section>
           <h2 className="scroll-mt-6 text-lg font-semibold tracking-tight">Book versus the Tape</h2>
           <p className="mt-1 text-sm text-steel">
-            Equity path this session. Fills wait for 09:15 IST.
+            Equity path. Positional cash: 8% name cap, 15% book halt. Fills 09:15–15:30 IST.
           </p>
           <div className="mt-4 h-64">
             {history.length < 2 ? (

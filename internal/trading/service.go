@@ -89,6 +89,12 @@ func New(d Deps) *Service {
 	if config.Bool("AUTOPILOT_LIVE_IND") {
 		log.Warn("AUTOPILOT_LIVE_IND is ignored; fills stay on the paper book. INDstocks is quotes and history only.")
 	}
+	log.Info("paper book",
+		"mode", "positional-cash",
+		"scalp", config.Bool("SCALP_MODE"),
+		"name_cap", costs.NameCap,
+		"drawdown_halt", costs.DrawdownHalt,
+	)
 	return &Service{
 		md: d.MarketData, ln: d.Learning, sn: d.Sentiment, llm: d.LLM,
 		log: log, now: now, cfg: d.Cfg,

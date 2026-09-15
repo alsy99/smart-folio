@@ -11,6 +11,7 @@ import (
 	marketdatav1 "aperture/gen/marketdata/v1"
 	sentimentv1 "aperture/gen/sentiment/v1"
 	tradingv1 "aperture/gen/trading/v1"
+	"aperture/pkg/config"
 	"aperture/pkg/costs"
 	"aperture/pkg/excess"
 	"aperture/pkg/marketclock"
@@ -101,11 +102,15 @@ func (s *Service) Plan(ctx context.Context) error {
 
 	baseW := map[string]float64{}
 	for _, w := range copiedW {
+		if skipSubSession(w.StrategyId) {
+			continue
+		}
 		baseW[w.StrategyId] = w.Weight
 	}
 	if len(baseW) == 0 {
-		eqw := 1.0 / float64(len(strategies.IDs()))
-		for _, id := range strategies.IDs() {
+		ids := strategies.IDs()
+		eqw := 1.0 / float64(len(ids))
+		for _, id := range ids {
 			baseW[id] = eqw
 		}
 	}
@@ -182,9 +187,10 @@ func (s *Service) Execute(ctx context.Context) (*tradingv1.TickResponse, error) 
 		if t.Side == "SELL" {
 			move = -move
 		}
-		hold := now.UnixMilli() - t.OpenedAtUnixMs
-		if move > 0.012 || move < -0.008 || hold > 45*1000 {
-			s.closeLocked(t, px, niftyRet)
+		hold := now.Sub(time.UnixMilli(t.OpenedAtUnixMs))
+		sig := plan.signals[t.Symbol]
+		if shouldExit(scalpMode(), hold, move, sig.Direction) {
+			s.closeLocked(t, px, niftyRet, s.tradeADV(ctx, t.Symbol))
 			closes++
 			go s.record(t)
 		} else {
@@ -194,7 +200,14 @@ func (s *Service) Execute(ctx context.Context) (*tradingv1.TickResponse, error) 
 	s.open = remain
 
 	eq := s.markLocked()
+	halted := costs.BookHalted(eq, s.eq0)
+	if halted {
+		s.log.Info("paper halt", "reason", "book drawdown", "equity", eq, "start", s.eq0)
+	}
 	for _, sym := range universe.EquitySymbols() {
+		if halted {
+			break
+		}
 		if plan.standAside[sym] {
 			continue
 		}
@@ -203,39 +216,48 @@ func (s *Service) Execute(ctx context.Context) (*tradingv1.TickResponse, error) 
 			continue
 		}
 		sig := plan.signals[sym]
-		if sig.Direction == 0 || sig.Score < 0.25 {
+		if sig.Direction <= 0 || sig.Score < 0.25 {
+			continue
+		}
+		if skipSubSession(sig.StrategyID) {
 			continue
 		}
 		if s.hasOpen(sym) {
 			continue
 		}
+		held := 0.0
+		if p := s.pos[sym]; p != nil {
+			held = p.MarketValue
+		}
+		room := costs.NameRoom(eq, held)
+		if room < costs.MinNameNotional {
+			continue
+		}
 		w := plan.weights[sig.StrategyID]
-		notional := eq * 0.08 * sig.Score * (0.5 + w)
-		if notional < 15000 {
-			notional = 15000
+		notional := eq * costs.NameCap * sig.Score * (0.5 + w)
+		if notional > room {
+			notional = room
 		}
 		if notional > s.cash*0.25 {
 			notional = s.cash * 0.25
 		}
-		if notional < 5000 || s.cash < notional {
+		if notional < costs.MinNameNotional || s.cash < notional {
 			continue
 		}
 		qty := math.Floor(notional / px)
 		if qty < 1 {
 			continue
 		}
-		fillPx := costs.BuyFill(px)
-		if sig.Direction < 0 {
-			continue
-		}
+		fillPx := costs.BuyFill(px, qty, s.tradeADV(ctx, sym))
 		cost := qty * fillPx
-		comm := costs.Commission(cost)
-		s.cash -= cost + comm
+		charge := costs.RoundTripBuy(cost)
+		s.cash -= cost + charge.Total
 		s.seq++
 		t := &commonv1.PaperTrade{
 			Id: "t-" + strconv.Itoa(s.seq), Symbol: sym, Side: "BUY", StrategyId: sig.StrategyID,
 			Qty: qty, Entry: fillPx, Open: true, OpenedAtUnixMs: now.UnixMilli(),
 			InvestigationIds: plan.invIDs[sym],
+			Lesson:           charge.Lesson,
 		}
 		s.open = append(s.open, t)
 		p := s.pos[sym]
@@ -285,7 +307,7 @@ func (s *Service) bestSignal(ctx context.Context, sym string, sent float64, weig
 	cache := map[string]pack{}
 	load := func(interval string) pack {
 		if interval == "" || interval == "session" {
-			interval = "5m"
+			interval = "1d"
 		}
 		if p, ok := cache[interval]; ok {
 			return p
@@ -307,6 +329,9 @@ func (s *Service) bestSignal(ctx context.Context, sym string, sent float64, weig
 	}
 	ids := make([]string, 0, len(weights))
 	for id := range weights {
+		if skipSubSession(id) {
+			continue
+		}
 		ids = append(ids, id)
 	}
 	if len(ids) == 0 {
@@ -328,8 +353,35 @@ func (s *Service) bestSignal(ctx context.Context, sym string, sent float64, weig
 	return best
 }
 
+func scalpMode() bool {
+	return config.Bool("SCALP_MODE")
+}
+
+func skipSubSession(id string) bool {
+	if scalpMode() {
+		return false
+	}
+	return strategies.IDHoldsUnderSession(id)
+}
+
+func shouldExit(scalp bool, hold time.Duration, move float64, signalDir int) bool {
+	if scalp {
+		return move > costs.ScalpTake || move < costs.ScalpStop || hold > costs.ScalpMaxHold
+	}
+	if hold < costs.SessionHold {
+		return false
+	}
+	if hold >= costs.MaxHold {
+		return true
+	}
+	return signalDir <= 0
+}
+
 func (s *Service) Loop(ctx context.Context) {
-	tickEvery := 8 * time.Second
+	tickEvery := time.Minute
+	if scalpMode() {
+		tickEvery = 8 * time.Second
+	}
 	t := time.NewTicker(tickEvery)
 	defer t.Stop()
 	for {

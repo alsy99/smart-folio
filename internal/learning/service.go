@@ -189,6 +189,9 @@ func (s *Service) applyBacktest(rep backtest.Report) {
 		if !v.Promoted {
 			continue
 		}
+		if strategies.IDHoldsUnderSession(v.Spec.ID) && !config.Bool("SCALP_MODE") {
+			continue
+		}
 		roster = append(roster, v.Spec.ID)
 		s.stats[v.Spec.ID] = &stat{
 			n: v.Trades, wins: v.Wins, pnlEMA: v.ReturnPct, excEMA: v.ExcessPct / 100,

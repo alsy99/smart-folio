@@ -1,16 +1,17 @@
 # Aperture
 
-India-only **paper-trading lab** for NSE cash equities. A Next.js desk (`apps/web`) talks HTTP/JSON to a Go **gateway**. Six backend services speak **gRPC**.
+India-only **positional cash paper book** for NSE equities. A Next.js desk (`apps/web`) talks HTTP/JSON to a Go **gateway**. Six backend services speak **gRPC**.
 
 This is educational software. It is **not** financial advice. It does **not** guarantee beating Nifty, Sensex, or mutual funds by 10 percentage points — that number is a **measured target** on the dashboard.
 
 ## What it does
 
 - 30-day paper campaign: **fills only in NSE hours** (09:15–15:30 IST, weekdays). News, investigations, and strategy plans run **24×7**.
-- Multi-strategy book (momentum, SMA cross, mean-reversion, breakout, swing, ORB, sentiment tilt)
-- Parallel **news investigations** with LLM reasoning (fundamental card + technicals). Fills only in NSE hours; research runs 24×7.
+- **One shipped roster**: daily-bar methods (SMA, momentum, mean-reversion, breakout, swing, sentiment tilt). Holds are **days to weeks** — never under one cash session.
+- **8% name cap** and a **15% book drawdown halt** on new buys. The old 45s / +1.2% / −0.8% scalp path is off unless `SCALP_MODE=true`.
+- Parallel **news investigations** with LLM reasoning (fundamental card + technicals).
 - Learning journal after every closed fill (helped vs hurt Nifty → evolving weights)
-- **5-year backtest lab** across methods and timeframes; winners are promoted into the live roster
+- **5-year backtest lab** on daily/weekly frames; winners are promoted into the live roster
 - Benchmark table: Nifty 50, Nifty 500, Sensex, large-cap / flexi-cap MF **peer proxies**
 
 Quotes and bars use the [INDstocks API](https://api-docs.indstocks.com/api-overview/) when `INDSTOCKS_ACCESS_TOKEN` is set. Fills stay on the **paper book**. Live order routing is off.
@@ -37,6 +38,7 @@ Docker Compose is provided (`docker compose up --build`) if you prefer container
 | Variable | Purpose |
 |----------|---------|
 | `MARKET_CLOCK_OVERRIDE=open` | Force paper fills after IST close (off by default) |
+| `SCALP_MODE=true` | Opt-in 45s / +1.2% / −0.8% exits. Default `false` is positional cash. |
 | `AUTOSTART_CAMPAIGN=true` | Start the 30-day book when trading boots |
 | `NEWSAPI_KEY` / `CURRENTS_API_KEY` / `FINNHUB_API_KEY` | Live headlines; otherwise mock India tape |
 | `OPENAI_API_KEY` | Advisor via OpenAI if set |

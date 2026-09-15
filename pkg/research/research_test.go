@@ -14,7 +14,7 @@ func TestParseJSONConclusion(t *testing.T) {
 }
 
 func TestHeuristicHasTAAndFA(t *testing.T) {
-	n := Heuristic(Input{Symbol: "TCS", StrategyID: "momentum_5m", Score: 0.4, Direction: 1})
+	n := Heuristic(Input{Symbol: "TCS", StrategyID: "momentum_1d", Score: 0.4, Direction: 1})
 	if n.Technical == "" || n.Fundamental == "" {
 		t.Fatalf("%+v", n)
 	}

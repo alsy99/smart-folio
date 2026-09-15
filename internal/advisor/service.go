@@ -66,11 +66,11 @@ func heuristic(req *advisorv1.ChatRequest) string {
 	case strings.Contains(msg, "why") || strings.Contains(msg, "learn"):
 		return "After every closed paper trade the learning service tags whether it helped or hurt vs Nifty and updates strategy weights with an exploration floor so weak methods still get trials."
 	case strings.Contains(msg, "risk") || strings.Contains(msg, "loss"):
-		return "There is no promised −15% collar. You have a kill switch, per-trade caps, and cash buffer. Underperformance vs Nifty is a warning, not a halt."
+		return "15% book drawdown halts new paper buys. Each name is capped at 8% of equity. Holds are days to weeks — the 45-second scalp path is off unless SCALP_MODE=true."
 	case strings.Contains(msg, "backtest") || strings.Contains(msg, "five year") || strings.Contains(msg, "5 year"):
 		return "The learning service backtests a grid of methods and timeframes over a 5-year weekday mock tape, then promotes variants that beat Nifty into the live roster. That is research, not a promise of live excess."
 	default:
-		return fmt.Sprintf("Aperture is a paper lab: fills only in NSE hours (09:15–15:30 IST); news, investigations, and strategy plans run 24x7. Multi-strategy book and a measured +10pp excess target vs Indian indexes and top-fund peers. Ask about Nifty, investigations, or the journal. Your note: %q", req.Message)
+		return fmt.Sprintf("Aperture is a positional NSE cash paper book: fills only in session hours (09:15–15:30 IST); research runs 24x7. Daily-bar roster, 8%% name cap, 15%% book halt, +10pp excess target vs Nifty. Ask about Nifty, investigations, or the journal. Your note: %q", req.Message)
 	}
 }
 

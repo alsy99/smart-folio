@@ -17,13 +17,12 @@ type Spec struct {
 
 func DefaultSpecs() []Spec {
 	return []Spec{
-		{ID: SMACross15m, Method: "sma_cross", Timeframe: "15m", Fast: 5, Slow: 20, Lookback: 20},
-		{ID: Momentum5m, Method: "momentum", Timeframe: "5m", Fast: 0, Slow: 0, Lookback: 3},
-		{ID: MeanReversion15, Method: "mean_reversion", Timeframe: "15m", Fast: 0, Slow: 20, Lookback: 20},
-		{ID: Breakout1h, Method: "breakout", Timeframe: "1h", Fast: 0, Slow: 0, Lookback: 20},
+		{ID: SMACross1d, Method: "sma_cross", Timeframe: "1d", Fast: 10, Slow: 30, Lookback: 30},
+		{ID: Momentum1d, Method: "momentum", Timeframe: "1d", Fast: 0, Slow: 0, Lookback: 10},
+		{ID: MeanReversion1d, Method: "mean_reversion", Timeframe: "1d", Fast: 0, Slow: 20, Lookback: 20},
+		{ID: Breakout1d, Method: "breakout", Timeframe: "1d", Fast: 0, Slow: 0, Lookback: 20},
 		{ID: SwingDaily, Method: "swing", Timeframe: "1d", Fast: 10, Slow: 30, Lookback: 30},
-		{ID: SentimentTilt, Method: "sentiment", Timeframe: "session", Fast: 0, Slow: 0, Lookback: 1},
-		{ID: OpeningRange, Method: "opening_range", Timeframe: "session", Fast: 0, Slow: 0, Lookback: 6},
+		{ID: SentimentTilt, Method: "sentiment", Timeframe: "1d", Fast: 0, Slow: 0, Lookback: 1},
 	}
 }
 
@@ -52,9 +51,32 @@ func Parse(id string) Spec {
 	return s
 }
 
+// HoldsUnderSession is true for tape frames shorter than one NSE cash session.
+func HoldsUnderSession(tf string) bool {
+	switch strings.ToLower(strings.TrimSpace(tf)) {
+	case "1m", "5m", "15m", "30m", "1h", "session":
+		return true
+	default:
+		return false
+	}
+}
+
+// IDHoldsUnderSession covers both DefaultSpecs and encoded ids like momentum_5m.
+func IDHoldsUnderSession(id string) bool {
+	spec := Parse(id)
+	if HoldsUnderSession(spec.Timeframe) {
+		return true
+	}
+	parts := strings.Split(strings.ToLower(id), "_")
+	if len(parts) == 0 {
+		return false
+	}
+	return HoldsUnderSession(parts[len(parts)-1])
+}
+
 func SearchGrid() []Spec {
 	methods := []string{"sma_cross", "momentum", "mean_reversion", "breakout", "swing"}
-	frames := []string{"5m", "15m", "1h", "1d", "1w"}
+	frames := []string{"1d", "1w"}
 	pairs := [][3]int{{3, 10, 10}, {5, 20, 20}, {8, 34, 34}}
 	out := DefaultSpecs()
 	seen := map[string]struct{}{}

@@ -216,15 +216,15 @@ func (p Pulse) Report() *commonv1.InvestigationReport {
 	return &commonv1.InvestigationReport{
 		Id: "tape-nifty-pcr", Headline: p.Headline, Symbols: syms,
 		EventType: "flow", Stance: stance, Score: score, Confidence: 0.62,
-		Corroboration: 1, Horizon: "session", StandAside: p.ATMIV > 28,
+		Corroboration: 1, Horizon: "position", StandAside: p.ATMIV > 28,
 		AnalyzedAtUnixMs: time.Now().UnixMilli(), Mode: "live",
 		Thesis: fmt.Sprintf("INDstocks option chain PCR %.2f (put OI %.0f / call OI %.0f). Tilt applied to the paper book; not a live F&O ticket.", p.PCR, p.PutOI, p.CallOI),
 		Risks:  "PCR is positioning, not a forecast. Weekly expiry pin and hedging flows can flip the read.",
 		Status: "done",
 		StrategyImplications: []*commonv1.StrategyTilt{
 			{StrategyId: "sentiment_tilt", Tilt: p.Tilt},
-			{StrategyId: "momentum_5m", Tilt: p.Tilt * 0.5},
-			{StrategyId: "mean_reversion_15m", Tilt: -p.Tilt * 0.4},
+			{StrategyId: "momentum_1d", Tilt: p.Tilt * 0.5},
+			{StrategyId: "mean_reversion_1d", Tilt: -p.Tilt * 0.4},
 		},
 		Sources: []*commonv1.NewsItem{{
 			Id: "indstocks-option-chain", Provider: "indstocks",
