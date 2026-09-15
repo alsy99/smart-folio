@@ -11,7 +11,8 @@ This is educational software. It is **not** financial advice. It does **not** gu
 - **8% name cap** and a **15% book drawdown halt** on new buys. The old 45s / +1.2% / −0.8% scalp path is off unless `SCALP_MODE=true`.
 - Parallel **news investigations** with LLM reasoning (fundamental card + technicals).
 - Learning journal after every closed fill (helped vs hurt Nifty → evolving weights)
-- **5-year backtest lab** on daily/weekly frames; winners are promoted into the live roster
+- **5-year walk-forward backtest lab** on daily/weekly frames. Promotion requires **out-of-sample** excess vs Nifty net of delivery costs, ≥30 OOS round trips, and max drawdown under the 15% book cap. At most **2 new admissions per weekly snapshot**.
+- The live roster is a **dated snapshot file** (`data/roster/YYYY-MM-DD.json`) — services boot from the latest file, never from an in-memory winner.
 - Benchmark table: Nifty 50, Nifty 500, Sensex, large-cap / flexi-cap MF **peer proxies**
 
 Quotes and bars use the [INDstocks API](https://api-docs.indstocks.com/api-overview/) when `INDSTOCKS_ACCESS_TOKEN` is set. Fills stay on the **paper book**. Live order routing is off.

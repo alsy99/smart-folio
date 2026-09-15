@@ -68,7 +68,7 @@ func heuristic(req *advisorv1.ChatRequest) string {
 	case strings.Contains(msg, "risk") || strings.Contains(msg, "loss"):
 		return "15% book drawdown halts new paper buys. Each name is capped at 8% of equity. Holds are days to weeks — the 45-second scalp path is off unless SCALP_MODE=true."
 	case strings.Contains(msg, "backtest") || strings.Contains(msg, "five year") || strings.Contains(msg, "5 year"):
-		return "The learning service backtests a grid of methods and timeframes over a 5-year weekday mock tape, then promotes variants that beat Nifty into the live roster. That is research, not a promise of live excess."
+		return "The learning service runs a 5-year walk-forward: train years roll forward, the last two years are out-of-sample. A variant is promoted only if OOS excess vs Nifty survives delivery costs, with ≥30 OOS trades and max drawdown under 15%. At most 2 new admissions per week, and the live roster is the dated snapshot in data/roster/."
 	default:
 		return fmt.Sprintf("Aperture is a positional NSE cash paper book: fills only in session hours (09:15–15:30 IST); research runs 24x7. Daily-bar roster, 8%% name cap, 15%% book halt, +10pp excess target vs Nifty. Ask about Nifty, investigations, or the journal. Your note: %q", req.Message)
 	}

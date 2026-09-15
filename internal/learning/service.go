@@ -40,6 +40,10 @@ type Service struct {
 	report  *learningv1.BacktestReport
 }
 
+func rosterDir() string {
+	return config.String("ROSTER_DIR", "data/roster")
+}
+
 func New(log *slog.Logger) *Service {
 	if log == nil {
 		log = slog.Default()
@@ -49,15 +53,31 @@ func New(log *slog.Logger) *Service {
 	for _, id := range roster {
 		st[id] = &stat{}
 	}
-	return &Service{log: log, stats: st, roster: roster}
+	s := &Service{log: log, stats: st, roster: roster}
+	// Boot from the dated roster snapshot if one exists — never from
+	// "whatever won last night" in memory.
+	if snap, path, err := backtest.LoadLatestRoster(rosterDir()); err == nil {
+		s.roster = snap.Roster
+		log.Info("roster from snapshot", "file", path, "date", snap.Date, "names", len(snap.Roster))
+	}
+	return s
 }
 
 func (s *Service) Seed(ctx context.Context) {
+	// A fresh weekly snapshot already validated the roster OOS — reuse it
+	// instead of re-running (and possibly re-promoting) on every boot.
+	if snap, path, err := backtest.LoadLatestRoster(rosterDir()); err == nil && !backtest.RosterStale(snap, time.Now(), 7) {
+		s.mu.Lock()
+		s.roster = snap.Roster
+		s.mu.Unlock()
+		s.log.Info("roster snapshot is current", "file", path, "date", snap.Date)
+		return
+	}
 	if _, err := s.RunBacktest(ctx, &learningv1.RunBacktestRequest{Years: 5}); err != nil {
 		s.log.Error("seed backtest", "err", err)
 		return
 	}
-	s.log.Info("seeded 5-year backtest roster")
+	s.log.Info("seeded 5-year walk-forward backtest roster")
 }
 
 func (s *Service) RecordTrade(_ context.Context, req *learningv1.RecordTradeRequest) (*learningv1.RecordTradeResponse, error) {
@@ -164,6 +184,13 @@ func (s *Service) RunBacktest(_ context.Context, req *learningv1.RunBacktestRequ
 	s.mu.Unlock()
 	rep := backtest.Run(years, time.Now())
 	out := toProto(rep)
+	if rep.Snapshot.Date != "" && len(rep.Snapshot.Roster) > 0 {
+		if path, err := backtest.SaveRoster(rosterDir(), rep.Snapshot); err != nil {
+			s.log.Error("roster snapshot", "err", err)
+		} else {
+			s.log.Info("roster snapshot written", "file", path, "names", len(rep.Snapshot.Roster), "new", len(rep.Snapshot.Added))
+		}
+	}
 	s.mu.Lock()
 	s.applyBacktest(rep)
 	s.report = out
@@ -185,20 +212,32 @@ func (s *Service) GetBacktest(_ context.Context, _ *learningv1.GetBacktestReques
 
 func (s *Service) applyBacktest(rep backtest.Report) {
 	var roster []string
+	if len(rep.Snapshot.Roster) > 0 {
+		roster = append(roster, rep.Snapshot.Roster...)
+	} else {
+		for _, v := range rep.Variants {
+			if v.Promoted {
+				roster = append(roster, v.Spec.ID)
+			}
+		}
+	}
+	var kept []string
+	for _, id := range roster {
+		if strategies.IDHoldsUnderSession(id) && !config.Bool("SCALP_MODE") {
+			continue
+		}
+		kept = append(kept, id)
+	}
 	for _, v := range rep.Variants {
 		if !v.Promoted {
 			continue
 		}
-		if strategies.IDHoldsUnderSession(v.Spec.ID) && !config.Bool("SCALP_MODE") {
-			continue
-		}
-		roster = append(roster, v.Spec.ID)
 		s.stats[v.Spec.ID] = &stat{
 			n: v.Trades, wins: v.Wins, pnlEMA: v.ReturnPct, excEMA: v.ExcessPct / 100,
 		}
 	}
-	if len(roster) > 0 {
-		s.roster = roster
+	if len(kept) > 0 {
+		s.roster = kept
 	}
 }
 
