@@ -3,10 +3,12 @@ package trading
 import (
 	"context"
 	"math"
+	"time"
 
 	"aperture/pkg/broker"
 	"aperture/pkg/costs"
 	"aperture/pkg/learn"
+	"aperture/pkg/marketclock"
 	"aperture/pkg/universe"
 
 	commonv1 "aperture/gen/common/v1"
@@ -153,7 +155,20 @@ func (s *Service) snapshotLocked() broker.Snapshot {
 	return broker.Snapshot{
 		Equity: eq, Peak: s.peak, Cash: s.cash,
 		Gross: gross, Held: held, Sector: sector,
+		DayBuys: s.dayBuys,
 	}
+}
+
+// rollSessionLocked resets the per-session buy notional when the IST date
+// changes. Called at the top of every Execute.
+func (s *Service) rollSessionLocked(now time.Time) {
+	key := marketclock.SessionDate(now)
+	if key == s.dayKey {
+		return
+	}
+	s.dayKey = key
+	s.dayBuys = 0
+	s.dayCapLogged = false
 }
 
 // tradeADV is 20-day ADV in ₹ from daily bars; 0 until the desk has history.

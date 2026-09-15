@@ -10,6 +10,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # internal/campaign checks the ledger's SHA against the commit that wrote it
       - uses: actions/setup-go@v5
         with:
           go-version: "1.22"

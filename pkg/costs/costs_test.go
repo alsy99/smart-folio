@@ -25,7 +25,8 @@ func TestADVSlippageScales(t *testing.T) {
 
 // 1-lot RELIANCE round-trip on 2024-06-21 (NIFTY expiry Friday).
 // Contract-note math for a delivery cash trade, INDstocks tariff:
-//   buy 1 × ₹2,905.00, sell 1 × ₹2,920.00, ADV ≈ ₹7.5e9 → slippage ≈ 4 bps.
+//
+//	buy 1 × ₹2,905.00, sell 1 × ₹2,920.00, ADV ≈ ₹7.5e9 → slippage ≈ 4 bps.
 func TestRelianceRoundTripContractNote(t *testing.T) {
 	qty := 1.0
 	buyMark := 2905.00

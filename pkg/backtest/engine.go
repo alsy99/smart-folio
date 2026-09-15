@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"aperture/pkg/costs"
-	"aperture/pkg/prices"
 	"aperture/pkg/strategies"
 	"aperture/pkg/universe"
 )
@@ -46,6 +45,15 @@ type Report struct {
 	Variants         []Variant
 	Snapshot         RosterSnapshot
 	Note             string
+	// Tape names the closes the folds ran on. Mock reports never write a roster.
+	Tape string
+	// TapeDays is the number of daily closes on the tape (0 on error).
+	TapeDays int
+}
+
+// Promotable is true only when the folds ran on real daily bars.
+func (r Report) Promotable() bool {
+	return r.Status == "complete" && !IsMockTape(r.Tape)
 }
 
 func tradingDays(end time.Time, years int) []time.Time {
@@ -61,11 +69,9 @@ func tradingDays(end time.Time, years int) []time.Time {
 	return days
 }
 
+// series is the mock tape's closes; kept for tests that pin the fold math.
 func series(symbol string, days []time.Time) []float64 {
-	out := make([]float64, len(days))
-	for i, d := range days {
-		out[i] = prices.Last(symbol, d)
-	}
+	out, _ := MockTape{}.Closes(symbol, days)
 	return out
 }
 
@@ -252,37 +258,62 @@ func walkForward(spec strategies.Spec, syms []string, books map[string][]float64
 	return v
 }
 
-// passesGate is the promotion bar: out-of-sample excess vs Nifty net of
-// delivery costs, enough round trips, and a drawdown inside the book cap.
+// passesGate is the promotion bar: out-of-sample excess vs Nifty AND a
+// positive absolute return, both net of delivery costs, enough round trips,
+// and a drawdown inside the book cap. The absolute-return leg matters on a
+// long-only cash book: when the index falls, sitting in cash "beats Nifty"
+// too, so excess alone would promote a method that only loses more slowly.
 func passesGate(v Variant) bool {
-	return v.ExcessPct > 0 && v.Trades >= MinOOSTrades && v.MaxDDPct <= DDCapPct
+	return v.ExcessPct > 0 && v.ReturnPct > 0 && v.Trades >= MinOOSTrades && v.MaxDDPct <= DDCapPct
 }
+
+// GateText is the published promotion bar, one line.
+const GateText = "excess>0 vs Nifty AND return>0, both net of delivery costs, ≥30 OOS trades, maxDD≤15%"
 
 func gateLesson(v Variant) string {
 	win := "OOS walk-forward"
 	switch {
 	case !passesGate(v):
-		return fmt.Sprintf("%s / %s: %s excess %+.2f%%, %d trades, maxDD %.1f%% — fails the gate (need excess>0, ≥%d trades, DD≤%.0f%%).",
-			v.Spec.Method, v.Spec.Timeframe, win, v.ExcessPct, v.Trades, v.MaxDDPct, MinOOSTrades, DDCapPct)
+		return fmt.Sprintf("%s / %s: %s excess %+.2f%%, return %+.2f%%, %d trades, maxDD %.1f%% — fails the gate (need excess>0, return>0, ≥%d trades, DD≤%.0f%%).",
+			v.Spec.Method, v.Spec.Timeframe, win, v.ExcessPct, v.ReturnPct, v.Trades, v.MaxDDPct, MinOOSTrades, DDCapPct)
 	default:
-		return fmt.Sprintf("%s / %s: %s excess %+.2f%% net of delivery costs, %d trades, maxDD %.1f%% — survives the gate.",
-			v.Spec.Method, v.Spec.Timeframe, win, v.ExcessPct, v.Trades, v.MaxDDPct)
+		return fmt.Sprintf("%s / %s: %s excess %+.2f%%, return %+.2f%% net of delivery costs, %d trades, maxDD %.1f%% — survives the gate.",
+			v.Spec.Method, v.Spec.Timeframe, win, v.ExcessPct, v.ReturnPct, v.Trades, v.MaxDDPct)
 	}
 }
 
+// Run is the mock-tape lab: a plumbing check that never promotes.
 func Run(years int, now time.Time) Report {
+	return RunOn(MockTape{}, years, now)
+}
+
+// RunOn runs the walk-forward search on the given tape.
+func RunOn(tape Tape, years int, now time.Time) Report {
 	if years <= 0 {
 		years = 5
 	}
-	days := tradingDays(now, years)
+	if tape == nil {
+		tape = MockTape{}
+	}
+	name := tape.Name()
+	fail := func(note string) Report {
+		return Report{Years: years, Status: "error", Note: note, RanAt: now, Tape: name}
+	}
+	days, err := tape.Days(years, now)
+	if err != nil {
+		return fail(fmt.Sprintf("%s tape: %v", name, err))
+	}
 	if len(days) < 80 {
-		return Report{Years: years, Status: "error", Note: "not enough history", RanAt: now}
+		return fail(fmt.Sprintf("%s tape: not enough history (%d days)", name, len(days)))
 	}
 	wins := oosWindows(days)
 	if len(wins) == 0 {
-		return Report{Years: years, Status: "error", Note: "not enough history for walk-forward folds", RanAt: now}
+		return fail(fmt.Sprintf("%s tape: not enough history for walk-forward folds (%d days)", name, len(days)))
 	}
-	nifty := series("NIFTY50", days)
+	nifty, err := tape.Closes("NIFTY50", days)
+	if err != nil {
+		return fail(fmt.Sprintf("%s tape NIFTY50: %v", name, err))
+	}
 	nRet := 0.0
 	if nifty[0] > 0 {
 		nRet = nifty[len(nifty)-1]/nifty[0] - 1
@@ -290,8 +321,13 @@ func Run(years int, now time.Time) Report {
 	syms := universe.EquitySymbols()
 	books := map[string][]float64{}
 	for _, sym := range syms {
-		books[sym] = series(sym, days)
+		closes, err := tape.Closes(sym, days)
+		if err != nil {
+			return fail(fmt.Sprintf("%s tape %s: %v", name, sym, err))
+		}
+		books[sym] = closes
 	}
+	mock := IsMockTape(name)
 
 	grid := strategies.SearchGrid()
 	var variants []Variant
@@ -312,7 +348,12 @@ func Run(years int, now time.Time) Report {
 	snap := RosterSnapshot{
 		Date:  now.Format("2006-01-02"),
 		Folds: len(wins),
-		Note:  "Walk-forward OOS gate: excess>0 net of delivery costs, ≥30 OOS trades, maxDD≤15%. At most 2 new admissions per weekly snapshot.",
+		Tape:  name,
+		Days:  len(days),
+		Note:  "Walk-forward OOS gate: " + GateText + ". At most 2 new admissions per weekly snapshot. Defaults stay on the roster; the ones failing the gate on this tape are listed under failing.",
+	}
+	if mock {
+		snap.Note = "Mock tape: defaults only, no admissions. Promotion needs real daily bars (INDstocks history or NSE bhavcopy)."
 	}
 	seenMethod := map[string]struct{}{}
 	promoted := 0
@@ -322,6 +363,15 @@ func Run(years int, now time.Time) Report {
 			v.Promoted = true
 			promoted++
 			snap.Roster = append(snap.Roster, v.Spec.ID)
+			if !mock && !passesGate(*v) {
+				snap.Failing = append(snap.Failing, v.Spec.ID)
+			}
+			continue
+		}
+		if mock {
+			if passesGate(*v) {
+				v.Lesson += " Mock tape — not promotable."
+			}
 			continue
 		}
 		if !passesGate(*v) || len(snap.Added) >= MaxNewPerSnap {
@@ -339,11 +389,17 @@ func Run(years int, now time.Time) Report {
 		})
 	}
 
+	note := fmt.Sprintf("Walk-forward on %s (%d daily closes, %d expanding folds); metrics are out-of-sample and net of delivery costs. Roster is data/roster/%s.json.", name, len(days), len(wins), snap.Date)
+	if mock {
+		note = fmt.Sprintf("Walk-forward on the MOCK tape (%d weekdays, %d folds): a plumbing check. Nothing here is promotable and no roster file is written — point the lab at INDstocks daily history or an NSE bhavcopy.", len(days), len(wins))
+	}
 	return Report{
 		Years: years, VariantsTested: len(variants), VariantsPromoted: promoted,
-		Folds: len(wins),
+		Folds:  len(wins),
 		Status: "complete", RanAt: now, NiftyReturnPct: nRet * 100, Variants: variants,
 		Snapshot: snap,
-		Note: fmt.Sprintf("Walk-forward on the mock tape: %d expanding folds, metrics are out-of-sample and net of delivery costs. Roster is data/roster/%s.json.", len(wins), snap.Date),
+		Note:     note,
+		Tape:     name,
+		TapeDays: len(days),
 	}
 }

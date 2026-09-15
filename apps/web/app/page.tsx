@@ -14,6 +14,7 @@ import { useDesk } from "@/hooks/use-desk";
 import { inr, istStamp, pct, shortSha } from "@/lib/utils";
 import { mockTape } from "@/lib/tape";
 import { heroExcess, heroTape } from "@/lib/hero";
+import { rosterIsDefault, rosterLine } from "@/lib/roster";
 import { fillAllowed } from "@/lib/session";
 
 function sessionLabel(status?: string, marketOpen?: boolean) {
@@ -56,6 +57,7 @@ function DeskShell() {
     kill,
     resume,
     pub,
+    backtest,
   } = desk;
   const open = Boolean(campaign?.marketOpen);
   const isMock = mockTape(health);
@@ -199,6 +201,14 @@ function DeskShell() {
               Connecting to the desk…
             </p>
           )}
+
+          <p
+            data-testid="hero-roster"
+            className={`mt-4 truncate font-mono text-xs ${rosterIsDefault(backtest) ? "text-brass" : "text-steel"}`}
+            title={rosterLine(backtest)}
+          >
+            {rosterLine(backtest)}
+          </p>
 
           <section className="mt-6 grid grid-cols-1 gap-6 border-b border-rule pb-6 sm:grid-cols-2 xl:grid-cols-4">
             <Stat

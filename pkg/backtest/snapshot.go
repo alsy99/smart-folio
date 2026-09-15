@@ -24,18 +24,29 @@ type RosterSnapshot struct {
 	Date   string      `json:"date"` // YYYY-MM-DD (IST run date)
 	Roster []string    `json:"roster"`
 	Added  []Promotion `json:"added"` // new admissions this snapshot (≤ MaxNewPerSnap)
-	Folds  int         `json:"folds"`
-	Note   string      `json:"note"`
+	// Failing lists shipped defaults that did not clear the gate on this
+	// tape. They stay on the roster (the book is the vetted spec, not last
+	// night's winner) but the file says so out loud.
+	Failing []string `json:"failing,omitempty"`
+	Folds   int      `json:"folds"`
+	Tape    string   `json:"tape"`   // "indstocks-1d" | "bhavcopy" — never "mock"
+	Days    int      `json:"days"`   // daily closes the folds ran on
+	GitSHA  string   `json:"gitSha"` // commit the lab ran at
+	Note    string   `json:"note"`
 }
 
 // SaveRoster writes data/roster/YYYY-MM-DD.json. One file per day: a re-run
-// on the same date overwrites rather than forks the roster.
+// on the same date overwrites rather than forks the roster. A mock-tape
+// snapshot is refused: the live book must not boot from sine-wave evidence.
 func SaveRoster(dir string, snap RosterSnapshot) (string, error) {
 	if snap.Date == "" {
 		return "", fmt.Errorf("roster snapshot has no date")
 	}
 	if len(snap.Roster) == 0 {
 		return "", fmt.Errorf("roster snapshot has empty roster")
+	}
+	if IsMockTape(snap.Tape) {
+		return "", fmt.Errorf("roster snapshot from the %q tape is not promotable; run the lab on real daily bars", snap.Tape)
 	}
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return "", err

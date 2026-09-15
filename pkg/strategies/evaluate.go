@@ -120,11 +120,15 @@ func evalMeanRevert(spec Spec, symbol string, w Window, _ float64) Signal {
 func evalBreakout(spec Spec, symbol string, w Window, _ float64) Signal {
 	s := Signal{StrategyID: spec.ID, Symbol: symbol}
 	highs, closes := w.High, w.Close
-	if len(highs) < 21 || len(closes) == 0 {
+	n := spec.Lookback // range length; the shipped breakout_1d is 20
+	if n <= 0 {
+		n = 20
+	}
+	if len(highs) < n+1 || len(closes) == 0 {
 		return s
 	}
-	mx := highs[len(highs)-21]
-	for i := len(highs) - 21; i < len(highs)-1; i++ {
+	mx := highs[len(highs)-n-1]
+	for i := len(highs) - n - 1; i < len(highs)-1; i++ {
 		if highs[i] > mx {
 			mx = highs[i]
 		}

@@ -4,8 +4,10 @@ node_modules/
 apps/web/.next/
 apps/web/out/
 bin/
-data/
+data/*
+!data/roster/
 pkg/indstocks/data/
+internal/trading/data/
 pids/
 *.log
 tmp-aperture-web/

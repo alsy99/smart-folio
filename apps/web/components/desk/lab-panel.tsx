@@ -4,6 +4,7 @@ import { Empty } from "@/components/desk/hero";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import type { useDesk } from "@/hooks/use-desk";
+import { labNote, rosterLine } from "@/lib/roster";
 import { pct } from "@/lib/utils";
 
 export function LabPanel({ desk }: { desk: ReturnType<typeof useDesk> }) {
@@ -62,8 +63,9 @@ export function LabPanel({ desk }: { desk: ReturnType<typeof useDesk> }) {
                 ? `${backtest.variantsTested} variants, ${backtest.variantsPromoted} promoted, Nifty ${pct(backtest.niftyReturnPct)}`
                 : backtest?.status === "running"
                   ? "Backtest running…"
-                  : "Search methods and timeframes on a five-year weekday tape, then seed the live roster."}
+                  : "Walk-forward on five years of real daily bars. Mock-tape runs report but never promote."}
             </p>
+            <p className="mt-1 font-mono text-xs text-steel">{rosterLine(backtest)}</p>
           </div>
           <Button variant="outline" onClick={runBacktest} disabled={btBusy}>
             {btBusy ? "Running Five-Year Backtest…" : "Run Five-Year Backtest"}
@@ -100,7 +102,7 @@ export function LabPanel({ desk }: { desk: ReturnType<typeof useDesk> }) {
                   ))}
                 </tbody>
               </table>
-              {backtest.note && <p className="mt-3 text-sm text-steel">{backtest.note}</p>}
+              {labNote(backtest) && <p className="mt-3 text-sm text-steel">{labNote(backtest)}</p>}
             </div>
           )}
         </div>

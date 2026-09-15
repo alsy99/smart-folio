@@ -3,7 +3,11 @@ import { heroExcess, heroTape } from "./hero";
 import { mockTape } from "./tape";
 
 describe("missing INDstocks token", () => {
-  const health = { status: "ok" as const, tape: "mock" as const, indstocks: { configured: false, mode: "mock" } };
+  const health = {
+    status: "ok" as const,
+    tape: "mock" as const,
+    indstocks: { configured: false, mode: "mock", profileOk: false, scrips: 0, orders: "off" },
+  };
 
   it("shows MOCK on the hero, not a pretty fake +8%", () => {
     expect(mockTape(health)).toBe(true);

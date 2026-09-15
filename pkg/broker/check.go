@@ -1,6 +1,8 @@
 package broker
 
 import (
+	"time"
+
 	"aperture/pkg/costs"
 	"aperture/pkg/universe"
 )
@@ -37,6 +39,35 @@ type Snapshot struct {
 	Gross  float64            // sum of long market values
 	Held   map[string]float64 // symbol → market value
 	Sector map[string]float64 // sector → market value
+	// DayBuys is new-buy notional already filled in the current IST session.
+	// Check refuses a buy that would push it past costs.TurnoverCapDay × Equity.
+	DayBuys float64
+}
+
+// TurnoverRoom is the new-buy notional still allowed this session.
+func TurnoverRoom(s Snapshot) float64 {
+	if s.Equity <= 0 {
+		return 0
+	}
+	room := s.Equity*costs.TurnoverCapDay - s.DayBuys
+	if room < 0 {
+		return 0
+	}
+	return room
+}
+
+// MayExit is the positional min-hold rail for a signal-driven close. A name
+// may leave the book on a signal flip only after costs.MinHoldSessions full
+// cash sessions; MaxHold always recycles it. Halt and scalp paths do not
+// call this.
+func MayExit(sessionsHeld int, hold time.Duration) Decision {
+	if hold >= costs.MaxHold {
+		return allow()
+	}
+	if hold < costs.SessionHold || sessionsHeld < costs.MinHoldSessions {
+		return deny(ReasonMinHold)
+	}
+	return allow()
 }
 
 func (s Snapshot) held(sym string) float64 {
@@ -100,6 +131,9 @@ func Check(in Intent, s Snapshot) Decision {
 	if notional < costs.MinNameNotional {
 		return deny(ReasonMinNotional)
 	}
+	if notional > TurnoverRoom(s)+1e-6 {
+		return deny(ReasonTurnover)
+	}
 	if room := Room(s, in.Symbol); notional > room+1e-6 {
 		return deny(breach(s, in.Symbol, notional))
 	}
@@ -143,6 +177,9 @@ func Room(s Snapshot, symbol string) float64 {
 	}
 	if sec := s.Equity*SectorCap - s.sectorHeld(symbol); sec < room {
 		room = sec
+	}
+	if t := TurnoverRoom(s); t < room {
+		room = t
 	}
 	if room < 1 {
 		return 0

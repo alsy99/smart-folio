@@ -19,6 +19,15 @@ const (
 	MaxHold         = 15 * 24 * time.Hour
 	MinNameNotional = 5_000.0
 
+	// Positional turnover discipline. Delivery STT is 0.1% each way, so a
+	// name flipped daily loses ~0.2% + brokerage per round trip before the
+	// signal is even wrong. A signal flip may close a name only after
+	// MinHoldSessions completed cash sessions (MaxHold still recycles it),
+	// and new-buy notional in one IST session is capped at TurnoverCapDay
+	// of equity. Both are broker-intent rails (see broker.Check), not copy.
+	MinHoldSessions = 3
+	TurnoverCapDay  = 0.10
+
 	// SCALP_MODE=true only.
 	ScalpTake    = 0.012
 	ScalpStop    = -0.008
@@ -63,18 +72,18 @@ type Line struct {
 // Charges is the full delivery-cost ledger for a round trip.
 // Buy-side rows appear first, then sell-side; Total is in ₹.
 type Charges struct {
-	Adv        float64 // 20-day ADV used for slippage scaling (₹)
-	BuyLines   []Line
-	SellLines  []Line
-	BuyTotal   float64 // Σ buy lines (already includes buy slippage)
-	SellTotal  float64 // Σ sell lines (includes sell slippage)
-	Slippage   float64 // total slippage in ₹ (informational)
-	Statutory  float64 // STT + stamp duty + SEBI + exchange
-	GST        float64
-	Brokerage  float64
-	Total      float64 // BuyTotal + SellTotal (charges only, excl. slippage)
-	NetCost    float64 // Total + Slippage  — what the book actually pays
-	Lesson     string  // compact ledger line for the journal
+	Adv       float64 // 20-day ADV used for slippage scaling (₹)
+	BuyLines  []Line
+	SellLines []Line
+	BuyTotal  float64 // Σ buy lines (already includes buy slippage)
+	SellTotal float64 // Σ sell lines (includes sell slippage)
+	Slippage  float64 // total slippage in ₹ (informational)
+	Statutory float64 // STT + stamp duty + SEBI + exchange
+	GST       float64
+	Brokerage float64
+	Total     float64 // BuyTotal + SellTotal (charges only, excl. slippage)
+	NetCost   float64 // Total + Slippage  — what the book actually pays
+	Lesson    string  // compact ledger line for the journal
 }
 
 // ADV returns the n-day average daily value (₹) of a price×volume series.

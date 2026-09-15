@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"strings"
 	"testing"
+	"time"
 
 	"aperture/pkg/costs"
 )
@@ -54,6 +55,46 @@ func TestNameGrossCashSectorCaps(t *testing.T) {
 	d := Check(Intent{Symbol: "SBIN", Side: Buy, Qty: 10, Price: 800}, s)
 	if d.Allow || d.Reason != ReasonSectorCap {
 		t.Fatalf("sector cap, got %+v", d)
+	}
+}
+
+func TestTurnoverCapIsABrokerRail(t *testing.T) {
+	s := cashBook(1_000_000)
+	if got := TurnoverRoom(s); got != 100_000 {
+		t.Fatalf("fresh session room should be %.0f%% of equity = 100k, got %.0f", costs.TurnoverCapDay*100, got)
+	}
+	// Room folds the turnover rail in: a name cap of 80k stays, but once 60k is
+	// bought this session only 40k is left for the next ticket.
+	s.DayBuys = 60_000
+	if got := Room(s, "TCS"); got < 39_999.99 || got > 40_000.01 {
+		t.Fatalf("room after 60k of session buys should be 40k, got %.0f", got)
+	}
+	d := Check(Intent{Symbol: "TCS", Side: Buy, Qty: 50, Price: 1000}, s)
+	if d.Allow || d.Reason != ReasonTurnover {
+		t.Fatalf("50k ticket past the session cap must deny TURNOVER_CAP, got %+v", d)
+	}
+	if d := Check(Intent{Symbol: "TCS", Side: Buy, Qty: 30, Price: 1000}, s); !d.Allow {
+		t.Fatalf("30k inside the remaining 40k must pass, got %+v", d)
+	}
+	s.DayBuys = 100_000
+	if d := Check(Intent{Symbol: "TCS", Side: Sell, Qty: 50, Price: 1000}, s); !d.Allow {
+		t.Fatal("sells never count against the buy turnover cap")
+	}
+}
+
+func TestMinHoldIsABrokerRail(t *testing.T) {
+	min := costs.MinHoldSessions
+	if d := MayExit(min-1, 48*time.Hour); d.Allow || d.Reason != ReasonMinHold {
+		t.Fatalf("%d sessions must not pass a %d-session min hold: %+v", min-1, min, d)
+	}
+	if d := MayExit(min, costs.SessionHold-time.Minute); d.Allow {
+		t.Fatal("under one cash session never exits on a flip")
+	}
+	if d := MayExit(min, 72*time.Hour); !d.Allow {
+		t.Fatalf("%d sessions clears the rail: %+v", min, d)
+	}
+	if d := MayExit(0, costs.MaxHold); !d.Allow {
+		t.Fatal("MaxHold recycles the name regardless of sessions")
 	}
 }
 

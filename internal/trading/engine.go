@@ -173,6 +173,7 @@ func (s *Service) Execute(ctx context.Context) (*tradingv1.TickResponse, error) 
 	plan := s.plan
 	fills, closes := 0, 0
 	turnover := 0.0
+	s.rollSessionLocked(now)
 	s.updateMarksLocked(last)
 	niftyRet := 0.0
 	if st := s.benchStart["NIFTY50"]; st > 0 && last["NIFTY50"] > 0 {
@@ -191,9 +192,11 @@ func (s *Service) Execute(ctx context.Context) (*tradingv1.TickResponse, error) 
 		if t.Side == "SELL" {
 			move = -move
 		}
-		hold := now.Sub(time.UnixMilli(t.OpenedAtUnixMs))
+		openedAt := time.UnixMilli(t.OpenedAtUnixMs)
+		hold := now.Sub(openedAt)
+		sessions := marketclock.SessionsHeld(openedAt, now)
 		sig := plan.signals[t.Symbol]
-		if shouldExit(scalpMode(), hold, move, sig.Direction) {
+		if shouldExit(scalpMode(), hold, sessions, move, sig.Direction) {
 			s.closeLocked(t, px, niftyRet, s.tradeADV(ctx, t.Symbol))
 			closes++
 			turnover += t.Qty * t.Exit
@@ -226,6 +229,13 @@ func (s *Service) Execute(ctx context.Context) (*tradingv1.TickResponse, error) 
 			if s.hasOpen(sym) {
 				continue
 			}
+			if broker.TurnoverRoom(snap) < costs.MinNameNotional {
+				if !s.dayCapLogged {
+					s.dayCapLogged = true
+					s.log.Info(broker.ReasonTurnover, "session", s.dayKey, "day_buys", s.dayBuys, "equity", snap.Equity, "cap", costs.TurnoverCapDay)
+				}
+				break
+			}
 			room := broker.Room(snap, sym)
 			if room < costs.MinNameNotional {
 				continue
@@ -242,7 +252,18 @@ func (s *Service) Execute(ctx context.Context) (*tradingv1.TickResponse, error) 
 			if qty < 1 {
 				continue
 			}
-			fillPx := costs.BuyFill(px, qty, s.tradeADV(ctx, sym))
+			// Size against the expected fill, not the last print: slippage on a
+			// room-sized ticket would otherwise nudge it past the rail it was
+			// sized to and the broker would refuse it.
+			adv := s.tradeADV(ctx, sym)
+			fillPx := costs.BuyFill(px, qty, adv)
+			if q := math.Floor(notional / fillPx); q < qty {
+				qty = q
+				fillPx = costs.BuyFill(px, qty, adv)
+			}
+			if qty < 1 {
+				continue
+			}
 			in := broker.Intent{Symbol: sym, Side: broker.Buy, Qty: qty, Price: fillPx}
 			if dec := s.desk.Admit(in, snap); !dec.Allow {
 				continue
@@ -276,6 +297,7 @@ func (s *Service) Execute(ctx context.Context) (*tradingv1.TickResponse, error) 
 			p.Pnl = (px - p.AvgPrice) * p.Qty
 			fills++
 			turnover += qty * fillPx
+			s.dayBuys += cost
 			snap = s.snapshotLocked()
 		}
 	}
@@ -372,15 +394,19 @@ func skipSubSession(id string) bool {
 	return strategies.IDHoldsUnderSession(id)
 }
 
-func shouldExit(scalp bool, hold time.Duration, move float64, signalDir int) bool {
+// shouldExit is the positional close rule. The min-hold rail lives in
+// broker.MayExit so paper and any future live adapter share it: a signal
+// flip closes a name only after costs.MinHoldSessions full cash sessions;
+// costs.MaxHold recycles it regardless.
+func shouldExit(scalp bool, hold time.Duration, sessions int, move float64, signalDir int) bool {
 	if scalp {
 		return move > costs.ScalpTake || move < costs.ScalpStop || hold > costs.ScalpMaxHold
 	}
-	if hold < costs.SessionHold {
-		return false
-	}
 	if hold >= costs.MaxHold {
 		return true
+	}
+	if !broker.MayExit(sessions, hold).Allow {
+		return false
 	}
 	return signalDir <= 0
 }

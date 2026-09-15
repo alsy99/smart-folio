@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"path/filepath"
 	"sort"
 	"sync"
 	"time"
@@ -14,6 +15,7 @@ import (
 	"aperture/pkg/config"
 	"aperture/pkg/learn"
 	"aperture/pkg/strategies"
+	"aperture/pkg/tape"
 )
 
 type Config struct {
@@ -40,8 +42,14 @@ type Service struct {
 	mu      sync.Mutex
 	journal []*commonv1.JournalEntry
 	roster  []string
-	snap    learn.Snapshot
-	report  *learningv1.BacktestReport
+	// rosterSrc is where the roster came from: a dated snapshot or RosterDefault.
+	rosterSrc string
+	snap      learn.Snapshot
+	report    *learningv1.BacktestReport
+}
+
+func barsDir() string {
+	return config.String("BARS_DIR", tape.DefaultDir)
 }
 
 func New(log *slog.Logger) *Service {
@@ -58,11 +66,41 @@ func NewDir(log *slog.Logger, dir string) *Service {
 	s := &Service{log: log, dir: dir, now: time.Now, roster: strategies.IDs()}
 	if snap, path, err := backtest.LoadLatestRoster(rosterDir()); err == nil {
 		s.roster = snap.Roster
-		log.Info("roster from snapshot", "file", path, "date", snap.Date, "names", len(snap.Roster))
+		s.rosterSrc = rosterSource(snap, path)
+		log.Info("roster from snapshot", "file", path, "date", snap.Date, "tape", snap.Tape, "names", len(snap.Roster), "added", len(snap.Added), "failing", len(snap.Failing))
+	} else {
+		s.rosterSrc = RosterDefault
+		log.Warn("roster: no snapshot file — default daily specs", "dir", rosterDir(), "names", len(s.roster), "err", err)
 	}
 	s.bootWeights()
 	s.bootJournal()
 	return s
+}
+
+// RosterDefault is the hero line when data/roster/ has no snapshot: the book
+// runs the shipped daily specs and says so, rather than implying a lab vetted it.
+const RosterDefault = "default daily specs (no data/roster snapshot)"
+
+// rosterSource is the one-line provenance shown on the hero.
+func rosterSource(snap backtest.RosterSnapshot, path string) string {
+	tape := snap.Tape
+	if tape == "" {
+		tape = "unknown tape"
+	}
+	return fmt.Sprintf("%s · %s · %d closes · %d admitted · %d defaults failing gate",
+		filepath.ToSlash(path), tape, snap.Days, len(snap.Added), len(snap.Failing))
+}
+
+// RosterNote prefixes a report note with the roster provenance line the
+// desk shows on the hero. Line 1 is always "Roster: …".
+func RosterNote(src, rest string) string {
+	if src == "" {
+		src = RosterDefault
+	}
+	if rest == "" {
+		return "Roster: " + src
+	}
+	return "Roster: " + src + "\n" + rest
 }
 
 func (s *Service) bootWeights() {
@@ -218,25 +256,32 @@ func (s *Service) GetWeights(_ context.Context, _ *learningv1.GetWeightsRequest)
 	return &learningv1.GetWeightsResponse{Weights: weights}, nil
 }
 
-func (s *Service) RunBacktest(_ context.Context, req *learningv1.RunBacktestRequest) (*learningv1.BacktestReport, error) {
+func (s *Service) RunBacktest(ctx context.Context, req *learningv1.RunBacktestRequest) (*learningv1.BacktestReport, error) {
 	years := int(req.Years)
 	if years <= 0 {
 		years = 5
 	}
 	s.mu.Lock()
-	s.report = &learningv1.BacktestReport{Years: int32(years), Status: "running"}
+	s.report = &learningv1.BacktestReport{Years: int32(years), Status: "running", Note: RosterNote(s.rosterSrc, "")}
 	s.mu.Unlock()
-	rep := backtest.Run(years, time.Now())
-	out := toProto(rep)
-	if rep.Snapshot.Date != "" && len(rep.Snapshot.Roster) > 0 {
+	tp := tape.Pick(ctx, barsDir())
+	rep := backtest.RunOn(tp, years, time.Now())
+	s.log.Info("walk-forward", "tape", rep.Tape, "days", rep.TapeDays, "status", rep.Status, "promotable", rep.Promotable())
+	// Only a real tape may touch data/roster/. A mock run reports, and stops.
+	if rep.Promotable() && rep.Snapshot.Date != "" && len(rep.Snapshot.Roster) > 0 {
 		if path, err := backtest.SaveRoster(rosterDir(), rep.Snapshot); err != nil {
 			s.log.Error("roster snapshot", "err", err)
 		} else {
-			s.log.Info("roster snapshot written", "file", path, "names", len(rep.Snapshot.Roster), "new", len(rep.Snapshot.Added))
+			s.log.Info("roster snapshot written", "file", path, "tape", rep.Tape, "names", len(rep.Snapshot.Roster), "new", len(rep.Snapshot.Added), "failing", len(rep.Snapshot.Failing))
+			s.mu.Lock()
+			s.rosterSrc = rosterSource(rep.Snapshot, path)
+			s.mu.Unlock()
 		}
 	}
 	s.mu.Lock()
 	s.applyBacktest(rep)
+	out := toProto(rep)
+	out.Note = RosterNote(s.rosterSrc, rep.Note)
 	s.report = out
 	s.mu.Unlock()
 	return out, nil
@@ -248,13 +293,18 @@ func (s *Service) GetBacktest(_ context.Context, _ *learningv1.GetBacktestReques
 	if s.report == nil {
 		return &learningv1.BacktestReport{
 			Status: "idle",
-			Note:   "Run a 5-year backtest to promote new methods and timeframes.",
+			Note:   RosterNote(s.rosterSrc, "Run a 5-year backtest on real daily bars to promote new methods and timeframes."),
 		}, nil
 	}
 	return s.report, nil
 }
 
+// applyBacktest moves the in-memory roster only on real-tape evidence; a
+// mock run leaves whatever the desk booted with.
 func (s *Service) applyBacktest(rep backtest.Report) {
+	if !rep.Promotable() {
+		return
+	}
 	var roster []string
 	if len(rep.Snapshot.Roster) > 0 {
 		roster = append(roster, rep.Snapshot.Roster...)

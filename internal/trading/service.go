@@ -58,25 +58,29 @@ type Service struct {
 	now func() time.Time
 	cfg Config
 
-	mu         sync.Mutex
-	cash       float64
-	eq0        float64
-	pos        map[string]*commonv1.Position
-	open       []*commonv1.PaperTrade
-	w          []*commonv1.StrategyWeight
-	camp       campaign
-	benchStart map[string]float64
-	beatWins   map[string]int
-	beatN      map[string]int
-	seq        int
-	plan       bookPlan
-	analyzing  bool
+	mu           sync.Mutex
+	cash         float64
+	eq0          float64
+	pos          map[string]*commonv1.Position
+	open         []*commonv1.PaperTrade
+	w            []*commonv1.StrategyWeight
+	camp         campaign
+	benchStart   map[string]float64
+	beatWins     map[string]int
+	beatN        map[string]int
+	seq          int
+	plan         bookPlan
+	analyzing    bool
 	peak         float64
 	desk         *broker.Paper
 	exc          map[string]*excursion
 	inv          *research.Desk
 	lastTurnover float64
 	lastFills    int
+	// Turnover rail: new-buy notional filled in the current IST session.
+	dayKey       string
+	dayBuys      float64
+	dayCapLogged bool
 }
 
 type campaign struct {

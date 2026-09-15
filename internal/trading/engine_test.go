@@ -3,6 +3,7 @@ package trading
 import (
 	"context"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
@@ -12,7 +13,9 @@ import (
 	"aperture/pkg/costs"
 	"aperture/pkg/learn"
 	"aperture/pkg/live"
+	"aperture/pkg/marketclock"
 	"aperture/pkg/strategies"
+	"aperture/pkg/universe"
 )
 
 func TestDefaultRosterHoldsASession(t *testing.T) {
@@ -28,36 +31,117 @@ func TestDefaultRosterHoldsASession(t *testing.T) {
 	}
 }
 
-func TestPositionalExitNeedsASession(t *testing.T) {
-	if shouldExit(false, 45*time.Second, 0.05, 1) {
+func TestPositionalExitNeedsMinHoldSessions(t *testing.T) {
+	min := costs.MinHoldSessions
+	if shouldExit(false, 45*time.Second, 0, 0.05, 1) {
 		t.Fatal("must not close on the 45s scalp path")
 	}
-	if shouldExit(false, costs.SessionHold-time.Second, -0.02, 0) {
+	if shouldExit(false, costs.SessionHold-time.Second, 0, -0.02, 0) {
 		t.Fatal("must hold through the session even if the signal flipped")
 	}
-	if !shouldExit(false, costs.SessionHold, 0.01, 0) {
-		t.Fatal("after a session, flat/short signal should exit")
+	if shouldExit(false, 24*time.Hour, min-1, -0.02, 0) {
+		t.Fatalf("a flip after %d sessions must not close a positional name (min %d)", min-1, min)
 	}
-	if shouldExit(false, costs.SessionHold, 0.01, 1) {
-		t.Fatal("still long after a session — keep the name")
+	if !shouldExit(false, 72*time.Hour, min, 0.01, 0) {
+		t.Fatal("after the min hold, flat/short signal should exit")
 	}
-	if !shouldExit(false, costs.MaxHold, 0.01, 1) {
-		t.Fatal("weeks-long cap should recycle the name")
+	if shouldExit(false, 72*time.Hour, min, 0.01, 1) {
+		t.Fatal("still long after the min hold — keep the name")
+	}
+	if !shouldExit(false, costs.MaxHold, 0, 0.01, 1) {
+		t.Fatal("weeks-long cap should recycle the name regardless of sessions")
 	}
 }
 
 func TestScalpExitPath(t *testing.T) {
-	if !shouldExit(true, costs.ScalpMaxHold+time.Second, 0, 1) {
+	if !shouldExit(true, costs.ScalpMaxHold+time.Second, 0, 0, 1) {
 		t.Fatal("45s")
 	}
-	if !shouldExit(true, time.Second, 0.013, 1) {
+	if !shouldExit(true, time.Second, 0, 0.013, 1) {
 		t.Fatal("take")
 	}
-	if !shouldExit(true, time.Second, -0.009, 1) {
+	if !shouldExit(true, time.Second, 0, -0.009, 1) {
 		t.Fatal("stop")
 	}
-	if shouldExit(true, time.Second, 0.001, 1) {
+	if shouldExit(true, time.Second, 0, 0.001, 1) {
 		t.Fatal("hold")
+	}
+}
+
+type testClock struct {
+	mu sync.Mutex
+	t  time.Time
+}
+
+func (c *testClock) Now() time.Time  { c.mu.Lock(); defer c.mu.Unlock(); return c.t }
+func (c *testClock) Set(t time.Time) { c.mu.Lock(); c.t = t; c.mu.Unlock() }
+
+func newReplaySvc(t *testing.T) (*Service, *testClock) {
+	t.Helper()
+	t.Setenv("INVESTIGATION_DIR", t.TempDir())
+	clk := &testClock{t: time.Date(2026, 9, 14, 15, 25, 0, 0, marketclock.Location())} // Monday
+	svc := New(Deps{MarketData: mdStub{}, Learning: lnStub{}, Sentiment: &snStub{}, Now: clk.Now})
+	return svc, clk
+}
+
+// TestExecuteHonoursTurnoverCap drives Execute on the deterministic tape with
+// every strategy voting long at full score: without the rail the book would
+// fill up to the gross cap on day one; with it, session buys stay under
+// costs.TurnoverCapDay of equity and a second Execute in the same session
+// adds nothing.
+func TestExecuteHonoursTurnoverCap(t *testing.T) {
+	svc, clk := newReplaySvc(t)
+	ctx := context.Background()
+	if _, err := svc.StartCampaign(ctx, &tradingv1.StartCampaignRequest{Days: 30}); err != nil {
+		t.Fatal(err)
+	}
+	svc.mu.Lock()
+	plan := bookPlan{signals: map[string]strategies.Signal{}, weights: map[string]float64{}, standAside: map[string]bool{}, invID: map[string]string{}}
+	for _, sym := range universe.EquitySymbols() {
+		plan.signals[sym] = strategies.Signal{Symbol: sym, StrategyID: strategies.Momentum1d, Direction: 1, Score: 1}
+	}
+	plan.weights[strategies.Momentum1d] = 1
+	svc.plan = plan
+	svc.mu.Unlock()
+
+	resp, err := svc.Execute(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.Fills == 0 {
+		t.Fatal("expected at least one fill with every name voting long")
+	}
+	svc.mu.Lock()
+	buys, eq := svc.dayBuys, svc.markLocked()
+	svc.mu.Unlock()
+	if buys > eq*costs.TurnoverCapDay+1 {
+		t.Fatalf("session buys %.0f exceed cap %.0f (%.0f%% of equity %.0f)", buys, eq*costs.TurnoverCapDay, costs.TurnoverCapDay*100, eq)
+	}
+	if buys < costs.MinNameNotional {
+		t.Fatalf("cap should still admit at least one ticket, got %.0f", buys)
+	}
+
+	clk.Set(clk.Now().Add(2 * time.Minute)) // same session
+	again, err := svc.Execute(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if again.Fills != 0 {
+		t.Fatalf("second Execute in the same session filled %d more names past the cap", again.Fills)
+	}
+
+	// Next session: the rail resets, more names may be admitted.
+	clk.Set(clk.Now().Add(24 * time.Hour))
+	next, err := svc.Execute(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if next.Fills == 0 {
+		t.Fatal("turnover rail must reset on a new IST session")
+	}
+	// ...and nothing closed: every name is inside the min hold.
+	if next.Closes != 0 {
+		t.Fatalf("names closed after 1 session, min hold is %d", costs.MinHoldSessions)
 	}
 }
 

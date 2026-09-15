@@ -34,14 +34,15 @@ func TestOOSWindowsAreExpanding(t *testing.T) {
 }
 
 func TestPromotionGate(t *testing.T) {
-	good := Variant{Spec: strategies.Spec{ID: "x"}, ExcessPct: 1.5, Trades: 42, MaxDDPct: 9.0}
+	good := Variant{Spec: strategies.Spec{ID: "x"}, ExcessPct: 1.5, ReturnPct: 2.0, Trades: 42, MaxDDPct: 9.0}
 	if !passesGate(good) {
 		t.Fatal("qualifying variant must pass the gate")
 	}
 	cases := map[string]Variant{
-		"no excess":   {ExcessPct: -0.1, Trades: 42, MaxDDPct: 9.0},
-		"too few":     {ExcessPct: 1.5, Trades: MinOOSTrades - 1, MaxDDPct: 9.0},
-		"dd over cap": {ExcessPct: 1.5, Trades: 42, MaxDDPct: DDCapPct + 0.1},
+		"no excess":   {ExcessPct: -0.1, ReturnPct: 2.0, Trades: 42, MaxDDPct: 9.0},
+		"lost money":  {ExcessPct: 5.0, ReturnPct: -3.3, Trades: 180, MaxDDPct: 4.5}, // beat a falling Nifty by losing less
+		"too few":     {ExcessPct: 1.5, ReturnPct: 2.0, Trades: MinOOSTrades - 1, MaxDDPct: 9.0},
+		"dd over cap": {ExcessPct: 1.5, ReturnPct: 2.0, Trades: 42, MaxDDPct: DDCapPct + 0.1},
 	}
 	for name, v := range cases {
 		if passesGate(v) {
@@ -69,6 +70,16 @@ func TestRunProducesDatedSnapshot(t *testing.T) {
 	if len(snap.Added) > MaxNewPerSnap {
 		t.Fatalf("new admissions capped at %d, got %d", MaxNewPerSnap, len(snap.Added))
 	}
+	// Mock evidence never promotes and never reaches disk.
+	if rep.Promotable() || rep.Tape != TapeMock {
+		t.Fatalf("mock report must not be promotable: tape=%q", rep.Tape)
+	}
+	if len(snap.Added) != 0 {
+		t.Fatalf("mock tape admitted %v", snap.Added)
+	}
+	if _, err := SaveRoster(t.TempDir(), snap); err == nil {
+		t.Fatal("SaveRoster must refuse a mock-tape snapshot")
+	}
 	// every default spec ships on the roster
 	for _, d := range strategies.DefaultSpecs() {
 		found := false
@@ -95,8 +106,8 @@ func TestRunProducesDatedSnapshot(t *testing.T) {
 
 func TestSnapshotRoundTrip(t *testing.T) {
 	dir := t.TempDir()
-	old := RosterSnapshot{Date: "2026-09-01", Roster: []string{"a"}, Folds: 2}
-	fresh := RosterSnapshot{Date: "2026-09-15", Roster: []string{"a", "b"}, Folds: 2}
+	old := RosterSnapshot{Date: "2026-09-01", Roster: []string{"a"}, Folds: 2, Tape: "indstocks-1d"}
+	fresh := RosterSnapshot{Date: "2026-09-15", Roster: []string{"a", "b"}, Folds: 2, Tape: "indstocks-1d"}
 	if _, err := SaveRoster(dir, old); err != nil {
 		t.Fatal(err)
 	}

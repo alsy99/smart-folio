@@ -3,7 +3,10 @@ package learning
 import (
 	"context"
 	"math"
+	"os"
+	"path/filepath"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -114,6 +117,58 @@ func TestReviewTableFromServiceCloses(t *testing.T) {
 		t.Fatalf("table %q closes %d", table, len(closes))
 	}
 	t.Logf("\n%s", table)
+}
+
+// TestNoRosterFileBootsDefaultsAndSaysSo: with data/roster/ empty the desk
+// runs the shipped daily specs and the report's first line says exactly that,
+// so the hero can print it instead of implying a lab vetted the book.
+func TestNoRosterFileBootsDefaultsAndSaysSo(t *testing.T) {
+	t.Setenv("ROSTER_DIR", t.TempDir())
+	s := NewDir(nil, t.TempDir())
+	if s.rosterSrc != RosterDefault {
+		t.Fatalf("roster source %q", s.rosterSrc)
+	}
+	rep, err := s.GetBacktest(context.Background(), &learningv1.GetBacktestRequest{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	first := strings.SplitN(rep.Note, "\n", 2)[0]
+	if first != "Roster: "+RosterDefault {
+		t.Fatalf("hero line %q", first)
+	}
+	want := strategies.IDs()
+	if len(s.roster) != len(want) {
+		t.Fatalf("default roster %v", s.roster)
+	}
+}
+
+// TestMockTapeNeverWritesRoster: with no INDstocks token and no cached bars
+// the lab runs on the mock tape, reports, and leaves data/roster/ empty.
+func TestMockTapeNeverWritesRoster(t *testing.T) {
+	rosterDir := t.TempDir()
+	t.Setenv("ROSTER_DIR", rosterDir)
+	t.Setenv("BARS_DIR", filepath.Join(t.TempDir(), "none"))
+	for _, k := range []string{"INDSTOCKS_ACCESS_TOKEN", "INDMONEY_API_TOKEN", "INDMONEY_ACCESS_TOKEN", "INDSTOCKS_API_KEY", "INDMONEY_CLIENT_ID"} {
+		t.Setenv(k, "")
+	}
+	s := NewDir(nil, t.TempDir())
+	rep, err := s.RunBacktest(context.Background(), &learningv1.RunBacktestRequest{Years: 5})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rep.Status != "complete" {
+		t.Fatalf("status %s: %s", rep.Status, rep.Note)
+	}
+	if !strings.Contains(rep.Note, "MOCK") {
+		t.Fatalf("note must name the mock tape: %q", rep.Note)
+	}
+	ents, _ := os.ReadDir(rosterDir)
+	if len(ents) != 0 {
+		t.Fatalf("mock tape wrote a roster: %v", ents)
+	}
+	if s.rosterSrc != RosterDefault {
+		t.Fatalf("roster source moved on mock evidence: %q", s.rosterSrc)
+	}
 }
 
 func sameWeights(a, b []*commonv1.StrategyWeight) bool {
