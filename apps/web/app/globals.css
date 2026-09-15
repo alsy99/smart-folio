@@ -1,20 +1,71 @@
 @import "tailwindcss";
 
-:root {
-  --paper: #f4efe6;
-  --ink: #1c1917;
+@theme inline {
+  --color-granite: #c5cad3;
+  --color-blotter: #f7f8fa;
+  --color-ink: #1c2430;
+  --color-steel: #5c6573;
+  --color-rule: #d0d4dc;
+  --color-brass: #b0892a;
+  --color-iris: #6d7380;
+  --color-up: #2f7a62;
+  --color-down: #b44a3c;
+  --font-sans: var(--font-syne);
+  --font-serif: var(--font-literata);
+}
+
+html {
+  color: var(--color-ink);
+  color-scheme: light;
 }
 
 body {
   min-height: 100vh;
-  color: var(--ink);
   font-family: var(--font-sans), ui-sans-serif, system-ui, sans-serif;
-  background:
-    radial-gradient(1200px 600px at 10% -10%, #d9f2ee 0%, transparent 50%),
-    radial-gradient(900px 500px at 100% 0%, #f3e0c8 0%, transparent 46%),
-    linear-gradient(180deg, #f7f3ea 0%, #ebe4d6 100%);
+  background: var(--color-granite);
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: rgb(28 36 48 / 0.08);
 }
 
 .num {
   font-variant-numeric: tabular-nums;
+}
+
+.prose-research {
+  font-family: var(--font-serif), ui-serif, Georgia, serif;
+  font-size: 0.95rem;
+  line-height: 1.55;
+  max-width: 42rem;
+  overflow-wrap: anywhere;
+}
+
+h1,
+h2,
+h3 {
+  text-wrap: balance;
+}
+
+@keyframes iris-glow {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.55;
+  }
+}
+
+.iris-open {
+  animation: iris-glow 2.8s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .iris-open {
+    animation: none;
+  }
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-ink);
+  outline-offset: 3px;
 }

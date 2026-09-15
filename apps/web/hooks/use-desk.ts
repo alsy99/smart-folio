@@ -7,6 +7,7 @@ import type {
   Benchmarks,
   Campaign,
   EquityPoint,
+  Health,
   Investigations,
   Journal,
   NewsFeed,
@@ -32,10 +33,11 @@ export function useDesk() {
   const [history, setHistory] = useState<EquityPoint[]>([]);
   const [backtest, setBacktest] = useState<BacktestReport | null>(null);
   const [btBusy, setBtBusy] = useState(false);
+  const [health, setHealth] = useState<Health | null>(null);
 
   const refresh = useCallback(async () => {
     try {
-      const [p, c, b, j, inv, n, s, bt, rs] = await Promise.all([
+      const [p, c, b, j, inv, n, s, bt, rs, h] = await Promise.all([
         api.portfolio(),
         api.campaign(),
         api.benchmarks(),
@@ -45,6 +47,7 @@ export function useDesk() {
         api.sentiment(),
         api.backtest(),
         api.research().catch(() => ({ picks: [] as PickResearch[] })),
+        api.health().catch(() => null),
       ]);
       setPortfolio(p);
       setCampaign(c);
@@ -55,6 +58,7 @@ export function useDesk() {
       setPicks(rs.picks || []);
       setSentiment(s.scores || []);
       setBacktest(bt);
+      setHealth(h);
       setErr(null);
       const nifty = b.benchmarks?.find((x) => x.id === "NIFTY50");
       setHistory((h) => {
@@ -152,6 +156,7 @@ export function useDesk() {
     sentiment,
     history,
     backtest,
+    health,
     nifty,
     onTrack,
     positions,

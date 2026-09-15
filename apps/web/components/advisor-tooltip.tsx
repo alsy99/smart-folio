@@ -1,10 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import { MessageCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Popover, PopoverArrow, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { api, type Sentiment } from "@/lib/api";
 
 export function AdvisorTooltip({ sentiment }: { sentiment: Sentiment[] }) {
@@ -14,7 +13,7 @@ export function AdvisorTooltip({ sentiment }: { sentiment: Sentiment[] }) {
   const [chatBusy, setChatBusy] = useState(false);
 
   async function sendChat() {
-    if (!chat.trim()) return;
+    if (!chat.trim() || chatBusy) return;
     setChatBusy(true);
     const q = chat.trim();
     setChat("");
@@ -22,7 +21,7 @@ export function AdvisorTooltip({ sentiment }: { sentiment: Sentiment[] }) {
       const r = await api.chat(q);
       setReplies((xs) => [...xs, { q, a: r.reply }]);
     } catch {
-      setReplies((xs) => [...xs, { q, a: "Advisor unavailable — is the gateway up?" }]);
+      setReplies((xs) => [...xs, { q, a: "Advisor is unavailable. Check that the gateway is up." }]);
     } finally {
       setChatBusy(false);
     }
@@ -31,14 +30,8 @@ export function AdvisorTooltip({ sentiment }: { sentiment: Sentiment[] }) {
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
-        <Button
-          type="button"
-          aria-expanded={open}
-          aria-label="Open advisor"
-          className="shadow-lg"
-        >
-          <MessageCircle className="size-4" />
-          Advisor
+        <Button type="button" variant="outline" aria-expanded={open} aria-haspopup="dialog">
+          Ask the Desk
         </Button>
       </PopoverTrigger>
       <PopoverContent
@@ -46,43 +39,48 @@ export function AdvisorTooltip({ sentiment }: { sentiment: Sentiment[] }) {
         align="end"
         collisionPadding={16}
         className="w-[min(26rem,calc(100vw-2rem))]"
-        onOpenAutoFocus={(e) => e.preventDefault()}
       >
-        <PopoverArrow className="fill-white drop-shadow-[0_-1px_0_rgba(214,211,209,1)]" width={14} height={8} />
-        <h3 className="font-[family-name:var(--font-display)] text-lg tracking-tight text-stone-900">
-          Advisor
-        </h3>
-        <div className="mt-3 max-h-40 space-y-2 overflow-auto">
+        <h3 className="text-lg font-semibold tracking-tight">Ask the Desk</h3>
+        <div aria-live="polite" className="mt-3 max-h-40 space-y-2 overflow-auto">
           {replies.length === 0 && (
-            <p className="text-sm text-stone-500">
-              Ask why a name is tilted, or how we score excess vs Nifty.
-            </p>
+            <p className="text-sm text-steel">Ask why a name is tilted, or how excess versus Nifty is scored.</p>
           )}
           {replies.map((r, i) => (
-            <div key={i} className="text-sm">
-              <p className="font-medium text-stone-800">{r.q}</p>
-              <p className="text-stone-600">{r.a}</p>
+            <div key={`${r.q}-${i}`} className="min-w-0 text-sm">
+              <p className="font-medium break-words">{r.q}</p>
+              <p className="prose-research mt-1 text-ink/80">{r.a}</p>
             </div>
           ))}
         </div>
-        <div className="mt-3 flex gap-2">
+        <form
+          className="mt-3 flex gap-2"
+          onSubmit={(e) => {
+            e.preventDefault();
+            sendChat();
+          }}
+        >
+          <label htmlFor="desk-ask" className="sr-only">
+            Message to the desk
+          </label>
           <Input
+            id="desk-ask"
+            name="message"
+            autoComplete="off"
+            spellCheck={false}
             value={chat}
-            placeholder="Message the desk…"
+            placeholder="Why is RELIANCE tilted?…"
             onChange={(e) => setChat(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && sendChat()}
           />
-          <Button onClick={sendChat} disabled={chatBusy}>
-            Send
+          <Button type="submit" disabled={chatBusy}>
+            {chatBusy ? "Sending…" : "Send"}
           </Button>
-        </div>
+        </form>
         {sentiment.length > 0 && (
-          <p className="mt-3 text-[11px] leading-relaxed text-stone-500">
-            Sentiment rollup:{" "}
+          <p className="mt-3 text-sm text-steel">
             {sentiment
               .slice(0, 6)
               .map((s) => `${s.symbol} ${s.label}`)
-              .join(" · ")}
+              .join(", ")}
           </p>
         )}
       </PopoverContent>

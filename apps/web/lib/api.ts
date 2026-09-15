@@ -2,6 +2,7 @@ import type {
   BacktestReport,
   Benchmarks,
   Campaign,
+  Health,
   Investigations,
   Journal,
   NewsFeed,
@@ -40,7 +41,7 @@ async function post<T>(path: string, body?: unknown, timeoutMs = 20000): Promise
 }
 
 export const api = {
-  health: () => get<{ status: string }>("/health"),
+  health: () => get<Health>("/health"),
   portfolio: () => get<Portfolio>("/portfolio"),
   campaign: () => get<Campaign>("/campaign"),
   startCampaign: (days = 30) => post<Campaign>("/campaign", { days }),

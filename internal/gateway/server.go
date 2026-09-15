@@ -15,7 +15,10 @@ import (
 	sentimentv1 "aperture/gen/sentiment/v1"
 	tradingv1 "aperture/gen/trading/v1"
 	"aperture/pkg/config"
+	"aperture/pkg/indstocks"
 
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 )
@@ -69,6 +72,7 @@ var marshaler = protojson.MarshalOptions{EmitUnpopulated: true, UseProtoNames: f
 func (a *API) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health", a.health)
+	mux.HandleFunc("GET /indstocks", a.health)
 	mux.HandleFunc("GET /universe", a.unary(15*time.Second, func(ctx context.Context, _ *http.Request) (proto.Message, error) {
 		return a.md.ListUniverse(ctx, &marketdatav1.ListUniverseRequest{})
 	}))
@@ -107,13 +111,13 @@ func (a *API) Handler() http.Handler {
 	mux.HandleFunc("POST /paper/tick", a.unary(15*time.Second, func(ctx context.Context, _ *http.Request) (proto.Message, error) {
 		return a.tr.Tick(ctx, &tradingv1.TickRequest{})
 	}))
-	mux.HandleFunc("GET /journal", a.unary(15*time.Second, func(ctx context.Context, _ *http.Request) (proto.Message, error) {
+	mux.HandleFunc("GET /journal", a.unaryFallback(15*time.Second, &learningv1.ListJournalResponse{}, func(ctx context.Context, _ *http.Request) (proto.Message, error) {
 		return a.ln.ListJournal(ctx, &learningv1.ListJournalRequest{Limit: 50})
 	}))
-	mux.HandleFunc("GET /weights", a.unary(15*time.Second, func(ctx context.Context, _ *http.Request) (proto.Message, error) {
+	mux.HandleFunc("GET /weights", a.unaryFallback(15*time.Second, &learningv1.GetWeightsResponse{}, func(ctx context.Context, _ *http.Request) (proto.Message, error) {
 		return a.ln.GetWeights(ctx, &learningv1.GetWeightsRequest{})
 	}))
-	mux.HandleFunc("GET /backtest", a.unary(15*time.Second, func(ctx context.Context, _ *http.Request) (proto.Message, error) {
+	mux.HandleFunc("GET /backtest", a.unaryFallback(15*time.Second, &learningv1.BacktestReport{}, func(ctx context.Context, _ *http.Request) (proto.Message, error) {
 		return a.ln.GetBacktest(ctx, &learningv1.GetBacktestRequest{})
 	}))
 	mux.HandleFunc("POST /backtest", a.unary(90*time.Second, func(ctx context.Context, r *http.Request) (proto.Message, error) {
@@ -140,9 +144,14 @@ func (a *API) Handler() http.Handler {
 	return chain(recoverer(a.log), cors, requestLog(a.log))(mux)
 }
 
-func (a *API) health(w http.ResponseWriter, _ *http.Request) {
+func (a *API) health(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 25*time.Second)
+	defer cancel()
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"status":     "ok",
+		"indstocks":  indstocks.Snapshot(ctx),
+	})
 }
 
 func (a *API) research(w http.ResponseWriter, _ *http.Request) {
@@ -158,14 +167,27 @@ func (a *API) research(w http.ResponseWriter, _ *http.Request) {
 }
 
 func (a *API) unary(timeout time.Duration, fn func(context.Context, *http.Request) (proto.Message, error)) http.HandlerFunc {
+	return a.unaryFallback(timeout, nil, fn)
+}
+
+func (a *API) unaryFallback(timeout time.Duration, fallback proto.Message, fn func(context.Context, *http.Request) (proto.Message, error)) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx, cancel := context.WithTimeout(r.Context(), timeout)
 		defer cancel()
 		msg, err := fn(ctx, r)
 		if err != nil {
-			a.log.Error("gateway", "path", r.URL.Path, "err", err)
-			http.Error(w, err.Error(), http.StatusBadGateway)
-			return
+			if fallback != nil {
+				if st, ok := status.FromError(err); ok && (st.Code() == codes.Unavailable || st.Code() == codes.DeadlineExceeded) {
+					a.log.Warn("gateway", "path", r.URL.Path, "err", err)
+					msg = fallback
+					err = nil
+				}
+			}
+			if err != nil {
+				a.log.Error("gateway", "path", r.URL.Path, "err", err)
+				http.Error(w, err.Error(), http.StatusBadGateway)
+				return
+			}
 		}
 		b, err := marshaler.Marshal(msg)
 		if err != nil {

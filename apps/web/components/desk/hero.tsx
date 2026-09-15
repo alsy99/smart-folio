@@ -1,29 +1,33 @@
-import { Card, CardContent } from "@/components/ui/card";
+import { cn } from "@/lib/utils";
 
-export function Hero({
+export function Stat({
   label,
   value,
-  sub,
+  hint,
   tone,
 }: {
   label: string;
   value: string;
-  sub: string;
+  hint?: string;
   tone?: "good" | "bad" | "warn";
 }) {
   const color =
-    tone === "good" ? "text-emerald-800" : tone === "bad" ? "text-rose-800" : "text-stone-900";
+    tone === "good" ? "text-up" : tone === "bad" ? "text-down" : tone === "warn" ? "text-brass" : "text-ink";
   return (
-    <Card>
-      <CardContent className="pt-5">
-        <p className="text-[11px] uppercase tracking-[0.18em] text-stone-500">{label}</p>
-        <p className={`num mt-1 font-[family-name:var(--font-display)] text-2xl ${color}`}>{value}</p>
-        <p className="mt-1 text-xs text-stone-500">{sub}</p>
-      </CardContent>
-    </Card>
+    <div className="min-w-0">
+      <p className="text-sm text-steel">{label}</p>
+      <p className={cn("num mt-0.5 truncate text-2xl font-semibold tracking-tight", color)} title={value}>
+        {value}
+      </p>
+      {hint ? (
+        <p className="mt-0.5 truncate text-sm text-steel" title={hint}>
+          {hint}
+        </p>
+      ) : null}
+    </div>
   );
 }
 
 export function Empty({ children }: { children: React.ReactNode }) {
-  return <p className="text-sm text-stone-500">{children}</p>;
+  return <p className="max-w-md text-sm text-steel">{children}</p>;
 }

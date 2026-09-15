@@ -196,12 +196,12 @@ func evalSentiment(spec Spec, symbol string, _ Window, score float64) Signal {
 	s := Signal{StrategyID: spec.ID, Symbol: symbol, Score: clamp01(math.Abs(score))}
 	if score > 0.15 {
 		s.Direction = 1
-		s.Reason = "news investigation bullish"
+		s.Reason = "tape + news bullish"
 	} else if score < -0.15 {
 		s.Direction = -1
-		s.Reason = "news investigation bearish"
+		s.Reason = "tape + news bearish"
 	} else {
-		s.Reason = "news investigation mixed"
+		s.Reason = "tape + news mixed"
 	}
 	return s
 }

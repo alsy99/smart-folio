@@ -11,6 +11,7 @@ import (
 	commonv1 "aperture/gen/common/v1"
 	sentimentv1 "aperture/gen/sentiment/v1"
 	"aperture/pkg/config"
+	"aperture/pkg/indstocks"
 	"aperture/pkg/llm"
 	"aperture/pkg/universe"
 )
@@ -263,6 +264,8 @@ func (s *Service) Refresh(ctx context.Context, force bool) {
 			sc.Confidence = 0.92
 		}
 	}
+
+	reports = indstocks.OverlayPulse(ctx, scores, reports)
 
 	s.mu.Lock()
 	s.news = items

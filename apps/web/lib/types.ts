@@ -185,3 +185,15 @@ export type PickResearch = {
 export type ResearchFeed = { picks: PickResearch[] };
 
 export type EquityPoint = { t: string; equity: number; nifty: number };
+
+export type Health = {
+  status: string;
+  indstocks?: {
+    configured: boolean;
+    mode: string;
+    profileOk: boolean;
+    scrips: number;
+    orders: string;
+    error?: string;
+  };
+};

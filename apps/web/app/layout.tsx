@@ -1,27 +1,35 @@
-import type { Metadata } from "next";
-import { Fraunces, Figtree } from "next/font/google";
+import type { Metadata, Viewport } from "next";
+import { Literata, Syne } from "next/font/google";
 import "./globals.css";
 
-const display = Fraunces({
-  variable: "--font-display",
+const sans = Syne({
+  variable: "--font-syne",
   subsets: ["latin"],
+  weight: ["500", "600", "700", "800"],
+  display: "swap",
 });
 
-const sans = Figtree({
-  variable: "--font-sans",
+const serif = Literata({
+  variable: "--font-literata",
   subsets: ["latin"],
+  display: "swap",
 });
 
 export const metadata: Metadata = {
-  title: "Aperture — India paper desk",
-  description:
-    "NSE paper-trading lab with parallel news investigations and Nifty-relative learning.",
+  title: "Aperture",
+  description: "NSE paper book. Fills only while the session is open.",
+};
+
+export const viewport: Viewport = {
+  themeColor: "#c5cad3",
+  width: "device-width",
+  initialScale: 1,
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
-      <body className={`${display.variable} ${sans.variable} antialiased`}>{children}</body>
+      <body className={`${sans.variable} ${serif.variable} font-sans antialiased`}>{children}</body>
     </html>
   );
 }

@@ -13,7 +13,7 @@ This is educational software. It is **not** financial advice. It does **not** gu
 - **5-year backtest lab** across methods and timeframes; winners are promoted into the live roster
 - Benchmark table: Nifty 50, Nifty 500, Sensex, large-cap / flexi-cap MF **peer proxies**
 
-Live INDstocks order routing is **off**. Optional quote keys can be added later.
+Quotes and bars use the [INDstocks API](https://api-docs.indstocks.com/api-overview/) when `INDSTOCKS_ACCESS_TOKEN` is set. Fills stay on the **paper book**. Live order routing is off.
 
 ## Run locally
 
@@ -43,6 +43,9 @@ Docker Compose is provided (`docker compose up --build`) if you prefer container
 | `GOOGLE_API_KEY` | Gemini; on 429 the desk tries Groq → Mistral → OpenRouter → NVIDIA → Z.AI |
 | `GROQ_API_KEY` / `MISTRAL_API_KEY` / `OPENROUTER_API_KEY` / `NVIDIA_API_KEY` / `ZAI_API_KEY` | OpenAI-compatible fallbacks |
 | `INVESTIGATION_LLM=true` | LLM reasoning on investigations and picked names (on by default; cap with `INVESTIGATION_LLM_MAX`) |
+| `INDSTOCKS_ACCESS_TOKEN` or `INDMONEY_API_TOKEN` | INDstocks access token for live NSE quotes and history. Empty = mock tape. |
+| `INDSTOCKS_API_KEY` / `INDSTOCKS_MPIN` / `INDSTOCKS_TOTP_SECRET` | Optional TOTP mint if you do not paste a dashboard token |
+| `AUTOPILOT_LIVE_IND` | Ignored. Orders are never sent to INDstocks. |
 | `NEXT_PUBLIC_API_URL` | Frontend → gateway (default `http://127.0.0.1:8080`) |
 
 ## Layout
