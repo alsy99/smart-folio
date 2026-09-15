@@ -15,6 +15,7 @@ import { inr, istStamp, pct, shortSha } from "@/lib/utils";
 import { mockTape } from "@/lib/tape";
 import { campaignTapeHint, heroExcess, heroTape } from "@/lib/hero";
 import { rosterIsDefault, rosterLine } from "@/lib/roster";
+import { satelliteEmpty, satelliteState, TARGET_NOT_PROMISE } from "@/lib/satellite";
 import { fillAllowed } from "@/lib/session";
 
 function sessionLabel(status?: string, marketOpen?: boolean) {
@@ -64,6 +65,16 @@ function DeskShell() {
   const frozen = Boolean(pub?.manifest?.frozen);
   const lastDay = pub?.days?.length ? pub.days[pub.days.length - 1] : null;
   const tape = heroTape(health);
+  // Phase 0 honesty: with every method at weight 0 and no IPS core yet, the
+  // desk says SATELLITE EMPTY and CASH rather than rendering failed methods
+  // as live. The frozen cash ledger (roster []) reads the same way.
+  const satEmpty = satelliteEmpty(portfolio?.weights) || Boolean(frozen && pub && (pub.manifest.roster?.length ?? 0) === 0 && pub.manifest.failing?.length);
+  const satellite = satelliteState(
+    satEmpty && !satelliteEmpty(portfolio?.weights)
+      ? (pub?.manifest.failing ?? []).map((id) => ({ strategyId: id, weight: 0, expectancy: 0, winRate: 0, regime: "failing-gate" }))
+      : portfolio?.weights,
+    false,
+  );
   const niftyHero = isMock ? heroExcess(health, nifty?.excessPct) : lastDay ? pct(lastDay.excessNifty50Pct) : nifty ? pct(nifty.excessPct) : "—";
 
   function setTab(id: DeskTab) {
@@ -247,22 +258,27 @@ function DeskShell() {
               tone={isMock ? "bad" : (lastDay ? lastDay.excessNifty50Pct : nifty?.excessPct || 0) >= 0 ? "good" : "bad"}
             />
             <Stat
-              label={frozen ? "Halt" : "Ten-point track"}
+              label={satEmpty ? "Satellite" : frozen ? "Halt" : "Ten-point track"}
               value={
-                frozen
-                  ? lastDay?.halted
-                    ? "Halted"
-                    : "Not halted"
-                  : onTrack
-                    ? "On track"
-                    : "Off pace"
+                satEmpty
+                  ? satellite.value
+                  : frozen
+                    ? lastDay?.halted
+                      ? "Halted"
+                      : "Not halted"
+                    : onTrack
+                      ? "On track"
+                      : "Off pace"
               }
               hint={
-                frozen && lastDay
-                  ? `Turnover ${pct(lastDay.turnoverPct)} · ${lastDay.fills} fills on last session`
-                  : `Target, not a promise · beat ${nifty ? Math.round((nifty.beatRate || 0) * 100) : 0}% of ticks`
+                satEmpty
+                  ? satellite.hint
+                  : frozen && lastDay
+                    ? `Turnover ${pct(lastDay.turnoverPct)} · ${lastDay.fills} fills on last session`
+                    : `${TARGET_NOT_PROMISE} Beat ${nifty ? Math.round((nifty.beatRate || 0) * 100) : 0}% of ticks.`
               }
-              tone={frozen ? (lastDay?.halted ? "bad" : "good") : onTrack ? "good" : "warn"}
+              tone={satEmpty ? "warn" : frozen ? (lastDay?.halted ? "bad" : "good") : onTrack ? "good" : "warn"}
+              testId="hero-satellite"
             />
             <Stat
               label={tape.label}

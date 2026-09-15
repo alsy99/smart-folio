@@ -12,6 +12,7 @@ import {
 import { Empty } from "@/components/desk/hero";
 import type { useDesk } from "@/hooks/use-desk";
 import { mockTape } from "@/lib/tape";
+import { NO_CORE_YET, SATELLITE_EMPTY, SATELLITE_EMPTY_WHY, satelliteEmpty } from "@/lib/satellite";
 import { fillAllowed } from "@/lib/session";
 import { inr, pct } from "@/lib/utils";
 import type { EquityPoint } from "@/lib/types";
@@ -47,6 +48,9 @@ export function BookPanel({ desk }: { desk: ReturnType<typeof useDesk> }) {
   const { campaign, benchmarks, history, positions } = desk;
   const open = Boolean(campaign?.marketOpen);
   const frozen = Boolean(desk.pub?.days?.length);
+  const satEmpty =
+    satelliteEmpty(desk.portfolio?.weights) ||
+    Boolean(frozen && (desk.pub?.manifest.roster?.length ?? 0) === 0 && desk.pub?.manifest.failing?.length);
   return (
     <div className="space-y-8">
       <div className="grid gap-10 lg:grid-cols-[1.35fr_0.65fr]">
@@ -54,7 +58,7 @@ export function BookPanel({ desk }: { desk: ReturnType<typeof useDesk> }) {
           <h2 className="scroll-mt-6 text-lg font-semibold tracking-tight">Book versus the Tape</h2>
           <p className="mt-1 text-sm text-steel">
             {desk.pub?.manifest?.frozen
-              ? `Frozen public 30-day path. SHA ${desk.pub.manifest.gitSha.slice(0, 12)}. Daily close on the mock tape.`
+              ? `Frozen public 30-day path. SHA ${desk.pub.manifest.gitSha.slice(0, 12)}. One MOC mark per session on ${desk.pub.manifest.tape}.`
               : "Equity path. 8% name, 90% gross, 10% cash, 25% sector, 15% peak-to-trough halt. Fills 09:15–15:30 IST."}
             {desk.health && mockTape(desk.health) ? " MOCK TAPE — this path is not live NSE." : ""}
           </p>
@@ -155,7 +159,15 @@ export function BookPanel({ desk }: { desk: ReturnType<typeof useDesk> }) {
       <section>
         <h2 className="scroll-mt-6 text-lg font-semibold tracking-tight">Holdings</h2>
         <div className="mt-3">
-          {positions.length === 0 ? (
+          {positions.length === 0 && satEmpty ? (
+            <div data-testid="book-satellite-empty" className="border border-brass/40 bg-paper px-4 py-3 text-sm">
+              <p className="font-semibold">{SATELLITE_EMPTY}</p>
+              <p className="mt-1 text-steel">
+                {SATELLITE_EMPTY_WHY} {NO_CORE_YET}
+                {desk.portfolio ? ` Cash ${inr(desk.portfolio.cash)}.` : ""}
+              </p>
+            </div>
+          ) : positions.length === 0 ? (
             <Empty>No open names. Research still runs after the close.</Empty>
           ) : (
             <table className="w-full text-left text-sm">

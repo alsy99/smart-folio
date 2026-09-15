@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import type { useDesk } from "@/hooks/use-desk";
 import { labNote, rosterLine } from "@/lib/roster";
+import { SATELLITE_EMPTY, SATELLITE_EMPTY_WHY, satelliteEmpty } from "@/lib/satellite";
 import { pct } from "@/lib/utils";
 
 export function LabPanel({ desk }: { desk: ReturnType<typeof useDesk> }) {
@@ -13,7 +14,12 @@ export function LabPanel({ desk }: { desk: ReturnType<typeof useDesk> }) {
     <div className="space-y-10">
       <div className="grid gap-10 lg:grid-cols-2">
         <section>
-          <h2 className="scroll-mt-6 text-lg font-semibold tracking-tight">Strategy Weights</h2>
+          <h2 className="scroll-mt-6 text-lg font-semibold tracking-tight">Satellite Weights</h2>
+          {satelliteEmpty(portfolio?.weights) && (
+            <p data-testid="lab-satellite-empty" className="mt-2 text-sm font-semibold text-brass">
+              {SATELLITE_EMPTY} — {SATELLITE_EMPTY_WHY} Nothing below is trading.
+            </p>
+          )}
           <div className="mt-4 space-y-3">
             {(portfolio?.weights || []).length === 0 ? (
               <Empty>Weights appear once learning has a prior.</Empty>
@@ -66,7 +72,7 @@ export function LabPanel({ desk }: { desk: ReturnType<typeof useDesk> }) {
                 ? `${backtest.variantsTested} variants, ${backtest.variantsPromoted} promoted, Nifty ${pct(backtest.niftyReturnPct)}`
                 : backtest?.status === "running"
                   ? "Backtest running…"
-                  : "Walk-forward on five years of real daily bars. Mock-tape runs report but never promote."}
+                  : "Walk-forward on five years of real daily bars. Read-only: the lab is the satellite admission exam, not the book. Mock-tape runs report but never promote."}
             </p>
             <p className="mt-1 font-mono text-xs text-steel">{rosterLine(backtest)}</p>
           </div>
@@ -99,7 +105,8 @@ export function LabPanel({ desk }: { desk: ReturnType<typeof useDesk> }) {
                       <td className="num">{Math.round((v.winRate || 0) * 100)}%</td>
                       <td className="num">{v.trades}</td>
                       <td>
-                        {v.promoted ? <Badge tone="good">live</Badge> : <Badge>lab</Badge>}
+                        {/* "roster" is a gate verdict, not a claim that it is trading now. */}
+                        {v.promoted ? <Badge tone="good">roster</Badge> : <Badge>lab</Badge>}
                       </td>
                     </tr>
                   ))}
