@@ -347,6 +347,7 @@ func RunOn(tape Tape, years int, now time.Time) Report {
 	}
 	snap := RosterSnapshot{
 		Date:  now.Format("2006-01-02"),
+		Added: []Promotion{},
 		Folds: len(wins),
 		Tape:  name,
 		Days:  len(days),
