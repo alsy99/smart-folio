@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math"
 	"os"
@@ -16,6 +17,7 @@ import (
 	"aperture/pkg/backtest"
 	"aperture/pkg/broker"
 	"aperture/pkg/costs"
+	"aperture/pkg/ips"
 	"aperture/pkg/marketclock"
 	"aperture/pkg/universe"
 )
@@ -84,6 +86,11 @@ type Manifest struct {
 	BarsSHA256  string   `json:"barsSha256"`
 	BarsFetched string   `json:"barsFetchedAt"`
 	Reproduce   string   `json:"reproduce"`
+	// Policy provenance. Empty on the legacy satellite-only campaign; a
+	// policy campaign binds one IPS (by id and hash) to one ledger file.
+	IPSID   string `json:"ipsId,omitempty"`
+	IPSHash string `json:"ipsHash,omitempty"`
+	Policy  string `json:"policy,omitempty"`
 }
 
 type Day struct {
@@ -110,6 +117,8 @@ type Inputs struct {
 	Roster     backtest.RosterSnapshot
 	Bars       *Bars
 	BarsSHA256 string
+	// IPS is nil on the legacy satellite-only campaign.
+	IPS *ips.IPS
 }
 
 // LoadInputs reads bars.json and roster.json from the campaign directory.
@@ -139,7 +148,14 @@ func NewManifest(gitSHA string, dirty bool, in Inputs) Manifest {
 	if in.Bars != nil {
 		fetched = in.Bars.FetchedAt
 	}
+	ipsID, ipsHash, policy := "", "", ""
+	if in.IPS != nil {
+		ipsID, ipsHash, policy = in.IPS.ID, in.IPS.Hash(), PolicyV1
+	}
 	return Manifest{
+		IPSID:           ipsID,
+		IPSHash:         ipsHash,
+		Policy:          policy,
 		Name:            Name,
 		Frozen:          true,
 		GitSHA:          gitSHA,
@@ -154,7 +170,7 @@ func NewManifest(gitSHA string, dirty bool, in Inputs) Manifest {
 		ScalpMode:       false,
 		Weights:         Weights,
 		CostModel:       CostModel,
-		SettingsHash:    SettingsHash(roster, failing),
+		SettingsHash:    SettingsHashIPS(roster, failing, ipsHash),
 		Universe:        universe.EquitySymbols(),
 		Benchmarks:      Benchmarks,
 		NameCap:         costs.NameCap,
@@ -191,6 +207,20 @@ func SettingsHash(roster, failing []string) string {
 		costs.ADVBaseBps, costs.ADVKappa, strings.Join(universe.EquitySymbols(), ","),
 	)
 	sum := sha256.Sum256([]byte(payload))
+	return hex.EncodeToString(sum[:12])
+}
+
+// PolicyV1 names the core+gated-satellite policy a campaign ran under.
+const PolicyV1 = "core-satellite-v1"
+
+// SettingsHashIPS folds the IPS fingerprint into the settings hash. With no
+// IPS it is exactly SettingsHash, so the legacy ledger still verifies.
+func SettingsHashIPS(roster, failing []string, ipsHash string) string {
+	base := SettingsHash(roster, failing)
+	if ipsHash == "" {
+		return base
+	}
+	sum := sha256.Sum256([]byte(base + "|policy=" + PolicyV1 + "|ips=" + ipsHash))
 	return hex.EncodeToString(sum[:12])
 }
 
@@ -247,8 +277,18 @@ func Load(dir string) (*Ledger, error) {
 	return &led, nil
 }
 
+// ErrLedgerBound: a ledger file belongs to one book. Writing a different
+// IPS (or a no-IPS book) over it is refused; use a new campaign directory.
+var ErrLedgerBound = errors.New("campaign: ledger file is bound to a different IPS")
+
 func Save(dir string, led *Ledger) error {
 	d := Dir(dir)
+	if prev, err := Load(dir); err == nil && prev.Manifest.Frozen {
+		if prev.Manifest.IPSHash != led.Manifest.IPSHash || prev.Manifest.IPSID != led.Manifest.IPSID {
+			return fmt.Errorf("%w: %s holds ips %s/%s, refusing %s/%s", ErrLedgerBound, filepath.Join(d, LedgerFile),
+				prev.Manifest.IPSID, prev.Manifest.IPSHash, led.Manifest.IPSID, led.Manifest.IPSHash)
+		}
+	}
 	if err := os.MkdirAll(d, 0o755); err != nil {
 		return err
 	}
@@ -263,6 +303,41 @@ func Save(dir string, led *Ledger) error {
 func IsFrozen() bool {
 	led, err := Load("")
 	return err == nil && led.Manifest.Frozen
+}
+
+// LedgerDirs lists every campaign directory under campaign/ that holds a
+// ledger.json — the set the SHA-provenance test and the IPS freeze cover.
+func LedgerDirs() []string {
+	root := filepath.Join(moduleRoot(), "campaign")
+	ents, err := os.ReadDir(root)
+	if err != nil {
+		return nil
+	}
+	var out []string
+	for _, e := range ents {
+		if !e.IsDir() {
+			continue
+		}
+		rel := filepath.Join("campaign", e.Name())
+		if _, err := os.Stat(filepath.Join(root, e.Name(), LedgerFile)); err == nil {
+			out = append(out, rel)
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
+// FrozenIPS reports whether an IPS is bound to any frozen ledger, and the
+// hash it was frozen under. The policy service refuses to change it.
+func FrozenIPS(id string) (hash string, frozen bool) {
+	for _, d := range LedgerDirs() {
+		led, err := Load(d)
+		if err != nil || !led.Manifest.Frozen || led.Manifest.IPSID != id {
+			continue
+		}
+		return led.Manifest.IPSHash, true
+	}
+	return "", false
 }
 
 // ledgerPathspec excludes the ledger itself from dirty/diff checks: the file

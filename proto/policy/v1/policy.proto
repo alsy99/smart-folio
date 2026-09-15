@@ -1,0 +1,63 @@
+syntax = "proto3";
+
+package policy.v1;
+
+option go_package = "aperture/gen/policy/v1;policyv1";
+
+// Policy decides targets from a client's Investment Policy Statement.
+// Trading executes. The LLM is nowhere on this path.
+service PolicyService {
+  rpc PutIPS(PutIPSRequest) returns (IPS);
+  rpc GetIPS(GetIPSRequest) returns (IPS);
+  rpc PreviewTargets(PreviewTargetsRequest) returns (Targets);
+}
+
+message IPS {
+  string id = 1;
+  string goal = 2;            // beat_nifty | beat_inflation | max_dd
+  int32 horizon_years = 3;    // 1, 3, 5, 10
+  double max_dd = 4;          // (0, 0.15]
+  string benchmark = 5;       // NIFTY50 | NIFTY500 | SENSEX
+  double core_pct = 6;        // [0.80, 1.00]
+  double satellite_pct = 7;   // 1 - core_pct, <= 0.20
+  string rebalance = 8;       // monthly | quarterly
+  double start_cash = 9;
+  bool fold_satellite = 10;
+  // Server-set. hash is the stable fingerprint that goes into a frozen
+  // campaign manifest; line is the one-line desk summary.
+  string hash = 11;
+  string line = 12;
+}
+
+message PutIPSRequest {
+  IPS ips = 1;
+}
+
+message GetIPSRequest {
+  string id = 1;
+}
+
+message PreviewTargetsRequest {
+  string id = 1;
+}
+
+message CoreWeight {
+  string symbol = 1;
+  double target = 2;  // portfolio weight
+  double actual = 3;  // held weight at last mark
+  double drift = 4;   // actual - target
+  bool ticket = 5;    // outside the drift band at a rebalance session
+}
+
+message Targets {
+  string ips_id = 1;
+  string ips_hash = 2;
+  int64 as_of_unix_ms = 3;
+  repeated CoreWeight core = 4;
+  double core_pct = 5;        // sum of core targets after rails
+  double satellite_cap = 6;   // <= ips.satellite_pct
+  double cash = 7;            // residual weight
+  string reason = 8;
+  string next_rebalance = 9;  // YYYY-MM-DD, NSE session
+  bool rebalance_session = 10;
+}

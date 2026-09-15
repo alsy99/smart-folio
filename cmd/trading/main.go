@@ -6,9 +6,13 @@ import (
 
 	learningv1 "aperture/gen/learning/v1"
 	marketdatav1 "aperture/gen/marketdata/v1"
+	policyv1 "aperture/gen/policy/v1"
 	sentimentv1 "aperture/gen/sentiment/v1"
 	tradingv1 "aperture/gen/trading/v1"
+	"aperture/internal/policy"
 	"aperture/internal/trading"
+	"aperture/pkg/campaign"
+	"aperture/pkg/config"
 	"aperture/pkg/grpcx"
 	"aperture/pkg/llm"
 	"aperture/pkg/serve"
@@ -38,8 +42,16 @@ func main() {
 	if cfg.Autostart {
 		go svc.Autostart(ctx)
 	}
+	// Policy is hosted on the trading process: one binary, two services.
+	// Policy decides targets; trading executes them.
+	pol := policy.New(policy.Deps{
+		Store:  policy.NewFileStore(config.String("IPS_DIR", "data/ips")),
+		Frozen: campaign.FrozenIPS,
+		Log:    slog.Default(),
+	})
 	if err := serve.GRPC(ctx, cfg.Bind, func(s *grpc.Server) {
 		tradingv1.RegisterTradingServiceServer(s, svc)
+		policyv1.RegisterPolicyServiceServer(s, pol)
 	}); err != nil {
 		slog.Error("trading", "err", err)
 		os.Exit(1)

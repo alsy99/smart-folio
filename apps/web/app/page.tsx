@@ -5,6 +5,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { AdvisorTooltip } from "@/components/advisor-tooltip";
 import { BookPanel } from "@/components/desk/book-panel";
 import { Stat } from "@/components/desk/hero";
+import { IPSForm } from "@/components/desk/ips-form";
 import { LabPanel } from "@/components/desk/lab-panel";
 import { ResearchPanel } from "@/components/desk/research-panel";
 import { SessionIris } from "@/components/desk/session-iris";
@@ -14,6 +15,7 @@ import { useDesk } from "@/hooks/use-desk";
 import { inr, istStamp, pct, shortSha } from "@/lib/utils";
 import { mockTape } from "@/lib/tape";
 import { campaignTapeHint, heroExcess, heroTape } from "@/lib/hero";
+import { ipsLine } from "@/lib/ips";
 import { rosterIsDefault, rosterLine } from "@/lib/roster";
 import { satelliteEmpty, satelliteState, TARGET_NOT_PROMISE } from "@/lib/satellite";
 import { fillAllowed } from "@/lib/session";
@@ -218,6 +220,17 @@ function DeskShell() {
             </p>
           )}
 
+          <p data-testid="hero-ips" className="mt-4 text-sm text-steel">
+            <span className="font-semibold text-ink">IPS</span> · {ipsLine(desk.ips)}
+            {desk.ipsMissing && !desk.ips ? (
+              <>
+                {" "}
+                <button type="button" className="underline decoration-brass underline-offset-2" onClick={() => setTab("policy")}>
+                  Set a policy
+                </button>
+              </>
+            ) : null}
+          </p>
           <p
             data-testid="hero-roster"
             className={`mt-4 truncate font-mono text-xs ${rosterIsDefault(backtest) ? "text-brass" : "text-steel"}`}
@@ -306,6 +319,14 @@ function DeskShell() {
             aria-labelledby={`tab-${tab}`}
           >
             {tab === "book" && <BookPanel desk={desk} />}
+            {tab === "policy" && (
+              <IPSForm
+                key={desk.ips?.id ?? "new"}
+                current={desk.ips}
+                frozen={Boolean(frozen && pub?.manifest.ipsId && pub.manifest.ipsId === desk.ips?.id)}
+                onSave={desk.saveIPS}
+              />
+            )}
             {tab === "research" && <ResearchPanel desk={desk} />}
             {tab === "lab" && <LabPanel desk={desk} />}
           </div>

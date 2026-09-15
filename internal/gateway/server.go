@@ -12,6 +12,7 @@ import (
 	advisorv1 "aperture/gen/advisor/v1"
 	learningv1 "aperture/gen/learning/v1"
 	marketdatav1 "aperture/gen/marketdata/v1"
+	policyv1 "aperture/gen/policy/v1"
 	sentimentv1 "aperture/gen/sentiment/v1"
 	tradingv1 "aperture/gen/trading/v1"
 	"aperture/pkg/campaign"
@@ -51,6 +52,7 @@ type API struct {
 	ln  learningv1.LearningServiceClient
 	sn  sentimentv1.SentimentServiceClient
 	ad  advisorv1.AdvisorServiceClient
+	pl  policyv1.PolicyServiceClient
 }
 
 type Clients struct {
@@ -59,13 +61,14 @@ type Clients struct {
 	Learning   learningv1.LearningServiceClient
 	Sentiment  sentimentv1.SentimentServiceClient
 	Advisor    advisorv1.AdvisorServiceClient
+	Policy     policyv1.PolicyServiceClient
 }
 
 func New(log *slog.Logger, c Clients) *API {
 	if log == nil {
 		log = slog.Default()
 	}
-	return &API{log: log, md: c.MarketData, tr: c.Trading, ln: c.Learning, sn: c.Sentiment, ad: c.Advisor}
+	return &API{log: log, md: c.MarketData, tr: c.Trading, ln: c.Learning, sn: c.Sentiment, ad: c.Advisor, pl: c.Policy}
 }
 
 var marshaler = protojson.MarshalOptions{EmitUnpopulated: true, UseProtoNames: false}
@@ -148,6 +151,25 @@ func (a *API) Handler() http.Handler {
 	}))
 	mux.HandleFunc("GET /research", a.research)
 	mux.HandleFunc("POST /advisor/chat", a.chat)
+	// Policy: the IPS is typed fields only. The body is decoded with
+	// protojson so unknown or free-text fields are rejected, not ignored.
+	mux.HandleFunc("PUT /ips", a.unary(15*time.Second, func(ctx context.Context, r *http.Request) (proto.Message, error) {
+		raw, err := io.ReadAll(http.MaxBytesReader(nil, r.Body, 1<<16))
+		if err != nil {
+			return nil, status.Error(codes.InvalidArgument, err.Error())
+		}
+		var in policyv1.IPS
+		if err := protojson.Unmarshal(raw, &in); err != nil {
+			return nil, status.Error(codes.InvalidArgument, "ips: "+err.Error())
+		}
+		return a.pl.PutIPS(ctx, &policyv1.PutIPSRequest{Ips: &in})
+	}))
+	mux.HandleFunc("GET /ips/{id}", a.unary(15*time.Second, func(ctx context.Context, r *http.Request) (proto.Message, error) {
+		return a.pl.GetIPS(ctx, &policyv1.GetIPSRequest{Id: r.PathValue("id")})
+	}))
+	mux.HandleFunc("POST /ips/{id}/preview", a.unary(15*time.Second, func(ctx context.Context, r *http.Request) (proto.Message, error) {
+		return a.pl.PreviewTargets(ctx, &policyv1.PreviewTargetsRequest{Id: r.PathValue("id")})
+	}))
 	rps := config.Int("GATEWAY_RPS", 40)
 	burst := config.Int("GATEWAY_BURST", 80)
 	return chain(recoverer(a.log), cors, ratelimit.New(rps, burst).Middleware, requestLog(a.log))(mux)
@@ -257,7 +279,7 @@ func cors(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
-		w.Header().Set("Access-Control-Allow-Methods", "GET,POST,OPTIONS")
+		w.Header().Set("Access-Control-Allow-Methods", "GET,POST,PUT,OPTIONS")
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusNoContent)
 			return

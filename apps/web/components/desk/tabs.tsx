@@ -3,16 +3,17 @@
 import { useRef } from "react";
 import { cn } from "@/lib/utils";
 
-export type DeskTab = "book" | "research" | "lab";
+export type DeskTab = "book" | "policy" | "research" | "lab";
 
 const TABS: { id: DeskTab; label: string }[] = [
   { id: "book", label: "Book" },
+  { id: "policy", label: "Policy" },
   { id: "research", label: "Research" },
   { id: "lab", label: "Lab" },
 ];
 
 export function isDeskTab(value: string | null): value is DeskTab {
-  return value === "book" || value === "research" || value === "lab";
+  return value === "book" || value === "policy" || value === "research" || value === "lab";
 }
 
 export function DeskTabs({

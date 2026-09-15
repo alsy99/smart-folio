@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { api } from "@/lib/api";
+import { IPS_STORAGE_KEY, type IPS } from "@/lib/ips";
 import type {
   BacktestReport,
   Benchmarks,
@@ -36,6 +37,8 @@ export function useDesk() {
   const [btBusy, setBtBusy] = useState(false);
   const [health, setHealth] = useState<Health | null>(null);
   const [pub, setPub] = useState<PublicCampaign | null>(null);
+  const [ips, setIPS] = useState<IPS | null>(null);
+  const [ipsMissing, setIPSMissing] = useState(false);
 
   const refresh = useCallback(async () => {
     try {
@@ -64,6 +67,17 @@ export function useDesk() {
       setHealth(h);
       setPub(pubCamp);
       setErr(null);
+      // The IPS id lives on this browser session; the statement lives on
+      // the policy service. No id yet is a first run, not an error.
+      const id = typeof window !== "undefined" ? window.localStorage.getItem(IPS_STORAGE_KEY) : null;
+      if (id) {
+        const cur = await api.ips(id).catch(() => null);
+        setIPS(cur);
+        setIPSMissing(!cur);
+      } else {
+        setIPS(null);
+        setIPSMissing(true);
+      }
       if (pubCamp?.days?.length) {
         setHistory(
           pubCamp.days.map((d) => ({
@@ -142,6 +156,13 @@ export function useDesk() {
     }
   }
 
+  async function saveIPS(next: IPS) {
+    const saved = await api.putIPS(next);
+    window.localStorage.setItem(IPS_STORAGE_KEY, saved.id);
+    setIPS(saved);
+    setIPSMissing(false);
+  }
+
   async function runBacktest() {
     setBtBusy(true);
     try {
@@ -179,5 +200,8 @@ export function useDesk() {
     kill,
     resume,
     runBacktest,
+    ips,
+    ipsMissing,
+    saveIPS,
   };
 }

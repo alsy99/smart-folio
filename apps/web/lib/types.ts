@@ -203,6 +203,10 @@ export type PublicDay = {
 export type PublicManifest = {
   name: string;
   frozen: boolean;
+  /** Policy campaigns bind one IPS; absent on the legacy satellite-only ledger. */
+  ipsId?: string;
+  ipsHash?: string;
+  policy?: string;
   gitSha: string;
   dirty: boolean;
   start: string;
@@ -228,6 +232,29 @@ export type PublicManifest = {
 export type PublicCampaign = {
   manifest: PublicManifest;
   days: PublicDay[];
+};
+
+/** policy.v1.CoreWeight */
+export type CoreWeight = {
+  symbol: string;
+  target: number;
+  actual: number;
+  drift: number;
+  ticket: boolean;
+};
+
+/** policy.v1.Targets — what the core allocator wants, as of one mark. */
+export type Targets = {
+  ipsId: string;
+  ipsHash: string;
+  asOfUnixMs: string | number;
+  core: CoreWeight[];
+  corePct: number;
+  satelliteCap: number;
+  cash: number;
+  reason: string;
+  nextRebalance: string;
+  rebalanceSession: boolean;
 };
 
 export type Health = {

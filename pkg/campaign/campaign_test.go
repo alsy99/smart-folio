@@ -2,11 +2,13 @@ package campaign
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
 	marketdatav1 "aperture/gen/marketdata/v1"
 	"aperture/pkg/backtest"
+	"aperture/pkg/ips"
 	"aperture/pkg/marketclock"
 )
 
@@ -77,6 +79,48 @@ func TestBarTapeIsAsOf(t *testing.T) {
 	}
 	if got := RosterAsOf().Format("2006-01-02"); got != "2026-08-14" {
 		t.Fatalf("roster as-of must be the last session before the window, got %s", got)
+	}
+}
+
+func TestManifestCarriesIPSHash(t *testing.T) {
+	p := ips.Default("c-1", 1_000_000)
+	in := Inputs{Roster: backtest.RosterSnapshot{Date: "2026-08-14", Tape: "indstocks-1d", Roster: []string{}, Failing: []string{"y"}}, BarsSHA256: "abc"}
+	legacy := NewManifest("deadbeef", false, in)
+	in.IPS = &p
+	m := NewManifest("deadbeef", false, in)
+	if m.IPSHash != p.Hash() || m.IPSID != "c-1" || m.Policy != PolicyV1 {
+		t.Fatalf("manifest must bind the IPS: %+v", m)
+	}
+	if legacy.IPSHash != "" || legacy.SettingsHash != SettingsHash(legacy.Roster, legacy.Failing) {
+		t.Fatal("legacy campaign must hash exactly as before")
+	}
+	if m.SettingsHash == legacy.SettingsHash {
+		t.Fatal("an IPS is a settings change")
+	}
+}
+
+// One ledger file, one book: a frozen ledger refuses a different IPS.
+func TestTwoBooksCannotShareOneLedger(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("CAMPAIGN_DIR", dir)
+	a := ips.Default("c-1", 1_000_000)
+	b := ips.Default("c-1", 1_000_000)
+	b.MaxDD = 0.10
+	in := Inputs{Roster: backtest.RosterSnapshot{Roster: []string{}}, IPS: &a}
+	if err := Save("", &Ledger{Manifest: NewManifest("sha", false, in)}); err != nil {
+		t.Fatal(err)
+	}
+	// Same IPS again is fine (a re-run).
+	if err := Save("", &Ledger{Manifest: NewManifest("sha2", false, in)}); err != nil {
+		t.Fatal(err)
+	}
+	in.IPS = &b
+	if err := Save("", &Ledger{Manifest: NewManifest("sha", false, in)}); !errors.Is(err, ErrLedgerBound) {
+		t.Fatalf("want ErrLedgerBound, got %v", err)
+	}
+	in.IPS = nil
+	if err := Save("", &Ledger{Manifest: NewManifest("sha", false, in)}); !errors.Is(err, ErrLedgerBound) {
+		t.Fatalf("a no-IPS book must not overwrite a policy ledger, got %v", err)
 	}
 }
 

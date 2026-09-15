@@ -13,7 +13,8 @@ proto:
 	  proto/trading/v1/trading.proto \
 	  proto/learning/v1/learning.proto \
 	  proto/sentiment/v1/sentiment.proto \
-	  proto/advisor/v1/advisor.proto
+	  proto/advisor/v1/advisor.proto \
+	  proto/policy/v1/policy.proto
 
 tidy:
 	go mod tidy
