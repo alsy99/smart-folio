@@ -11,6 +11,37 @@ import (
 	"aperture/pkg/costs"
 )
 
+const LogSatelliteCap = "SATELLITE_CAP"
+
+// satellitePct is the IPS satellite slice; with no IPS the legacy book is
+// all satellite and the cap is the gross cap.
+func (s *Service) satellitePct() float64 {
+	if s.ips == nil {
+		return broker.GrossCap
+	}
+	return s.ips.SatellitePct
+}
+
+// coreValueLocked is the core sleeve's market value at the given marks.
+func (s *Service) coreValueLocked(last map[string]float64) float64 {
+	mv := 0.0
+	for sym, q := range s.coreQty {
+		mv += q * last[sym]
+	}
+	return mv
+}
+
+// satelliteRoomLocked is how much more satellite notional the IPS allows:
+// SatellitePct × equity minus what the satellite already holds.
+func (s *Service) satelliteRoomLocked(snap broker.Snapshot, last map[string]float64) float64 {
+	held := snap.Gross - s.coreValueLocked(last)
+	room := snap.Equity*s.satellitePct() - held
+	if room < 0 {
+		return 0
+	}
+	return room
+}
+
 // coreInputLocked assembles the allocator's view of the book. Marks are
 // the caller's; the calendar is NIFTY50 candle dates from the tape.
 func (s *Service) coreInputLocked(ctx context.Context, now time.Time, last map[string]float64) policy.Input {

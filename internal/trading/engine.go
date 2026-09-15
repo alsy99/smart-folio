@@ -226,6 +226,16 @@ func (s *Service) Execute(ctx context.Context) (*tradingv1.TickResponse, error) 
 		s.desk.NoteHalt(snap)
 	} else {
 		for _, sym := range universe.EquitySymbols() {
+			// IPS satellite cap: sleeve notional ≤ SatellitePct × equity.
+			// Under a 100% core there is no satellite at all.
+			satRoom := s.satelliteRoomLocked(snap, last)
+			if satRoom < costs.MinNameNotional {
+				if !s.satCapLogged {
+					s.satCapLogged = true
+					s.log.Info(LogSatelliteCap, "session", s.dayKey, "satellite_pct", s.satellitePct(), "equity", snap.Equity)
+				}
+				break
+			}
 			if plan.standAside[sym] {
 				continue
 			}
@@ -258,6 +268,9 @@ func (s *Service) Execute(ctx context.Context) (*tradingv1.TickResponse, error) 
 			notional := snap.Equity * costs.NameCap * sig.Score * (0.5 + w)
 			if notional > room {
 				notional = room
+			}
+			if notional > satRoom {
+				notional = satRoom
 			}
 			if notional < costs.MinNameNotional {
 				continue

@@ -173,6 +173,7 @@ func (s *Service) rollSessionLocked(now time.Time) {
 	s.dayKey = key
 	s.dayBuys = 0
 	s.dayCapLogged = false
+	s.satCapLogged = false
 }
 
 // tradeADV is 20-day ADV in ₹ from daily bars; 0 until the desk has history.

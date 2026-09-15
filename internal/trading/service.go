@@ -97,6 +97,7 @@ type Service struct {
 	lastCoreFills int
 	lastSatFills  int
 	lastCorePlan  policy.Plan
+	satCapLogged  bool
 }
 
 type campaign struct {
