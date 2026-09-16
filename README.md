@@ -53,7 +53,7 @@ Maintainers (INDstocks token required): `go run ./cmd/campaign -fetch` writes `b
 
 Provenance is tested, not asserted: `go test ./internal/campaign` fails if a manifest's `gitSha` was written from a dirty tree, if a working-tree ledger differs from the committed one, or if the commit that last wrote that `ledger.json` is not the recorded SHA (or a commit that changed nothing but the ledger). Maintainers regenerate with `go run ./cmd/campaign -run -name <book> -force` on a clean commit and commit the ledger **alone** immediately after. CI checks out with `fetch-depth: 0` for this.
 
-Live exchange orders stay off until all of these exist: a written (exchange-filed) strategy spec, a broker principal path, Algo-ID tagging, a static IP for order endpoints, an order-rate cap under the exchange threshold, a kill switch a human can hit (Stop Autopilot / `data/KILL`), and the disclosure that **+10pp vs Nifty is a target, not a promise**. Selling access to others is a different license.
+Live exchange orders stay off until all of these exist: a written (exchange-filed) strategy spec, a broker principal path, Algo-ID tagging, a static IP for order endpoints, an order-rate cap under the exchange threshold, a kill switch a human can hit (Stop Autopilot / `data/KILL`), and the disclosure that **+10pp vs Nifty is a target, not a promise**. The paper description of what the book does today is [`docs/spec.md`](docs/spec.md) (core monthly rebalance, empty satellite). That file is **not** an exchange filing and does not arm orders. Selling access to others is a different license.
 
 ## Run locally
 
@@ -99,6 +99,7 @@ Open [http://127.0.0.1:43127](http://127.0.0.1:43127). With `AUTOSTART_CAMPAIGN=
 apps/web          Next.js desk
 campaign/         frozen public 30-day paper ledgers (cash month + policy A/B/C)
 cmd/              thin binaries (config, wiring, serve)
+docs/             paper strategy spec (core + empty satellite; not an exchange filing)
 LICENSE           Apache-2.0
 internal/         service implementations (not importable outside the module)
 pkg/              shared libraries (strategies, prices, config, serve)
