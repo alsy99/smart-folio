@@ -72,7 +72,7 @@ export function LabPanel({ desk }: { desk: ReturnType<typeof useDesk> }) {
                 ? `${backtest.variantsTested} variants, ${backtest.variantsPromoted} promoted, Nifty ${pct(backtest.niftyReturnPct)}`
                 : backtest?.status === "running"
                   ? "Backtest running…"
-                  : "Walk-forward on five years of real daily bars. Read-only: the lab is the satellite admission exam, not the book. Mock-tape runs report but never promote."}
+                  : "Walk-forward on five years of real daily bars. Read-only: the lab is not trading. It is the satellite admission exam. Mock-tape runs report but never promote."}
             </p>
             <p className="mt-1 font-mono text-xs text-steel">{rosterLine(backtest)}</p>
           </div>

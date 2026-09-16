@@ -87,6 +87,7 @@ func (a *API) Handler() http.Handler {
 		return a.tr.GetCampaign(ctx, &tradingv1.GetCampaignRequest{})
 	}))
 	mux.HandleFunc("GET /public-campaign", a.publicCampaign)
+	mux.HandleFunc("GET /public-campaigns", a.publicCampaigns)
 	mux.HandleFunc("POST /campaign", func(w http.ResponseWriter, r *http.Request) {
 		if campaign.IsFrozen() {
 			http.Error(w, "public 30-day campaign is frozen; same git SHA, settings, universe, and cost model. Clone and go run ./cmd/campaign -verify.", http.StatusConflict)
@@ -183,6 +184,13 @@ func (a *API) publicCampaign(w http.ResponseWriter, _ *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(led)
+}
+
+func (a *API) publicCampaigns(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(struct {
+		Campaigns []*campaign.Ledger `json:"campaigns"`
+	}{Campaigns: campaign.LoadAll()})
 }
 
 func (a *API) research(w http.ResponseWriter, _ *http.Request) {

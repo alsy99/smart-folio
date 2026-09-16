@@ -91,6 +91,19 @@ type Manifest struct {
 	IPSID   string `json:"ipsId,omitempty"`
 	IPSHash string `json:"ipsHash,omitempty"`
 	Policy  string `json:"policy,omitempty"`
+	IPSLine string `json:"ipsLine,omitempty"`
+	Note    string `json:"note,omitempty"`
+	// Synthetic is non-empty only when campaign.json applied a documented
+	// shock to the tape at load; Tape then carries the +synthetic-shock
+	// suffix. A ledger with this set is a fixture, not a market record.
+	Synthetic string `json:"synthetic,omitempty"`
+}
+
+func ipsLine(p *ips.IPS) string {
+	if p == nil {
+		return ""
+	}
+	return p.Line()
 }
 
 type Day struct {
@@ -105,6 +118,11 @@ type Day struct {
 	TurnoverINR       float64 `json:"turnoverInr"`
 	Fills             int     `json:"fills"`
 	Halted            bool    `json:"halted"`
+	// Sleeve split, present on policy campaigns.
+	CoreINR        float64 `json:"coreInr,omitempty"`
+	SatelliteINR   float64 `json:"satelliteInr,omitempty"`
+	CoreFills      int     `json:"coreFills,omitempty"`
+	SatelliteFills int     `json:"satelliteFills,omitempty"`
 }
 
 type Ledger struct {
@@ -119,6 +137,19 @@ type Inputs struct {
 	BarsSHA256 string
 	// IPS is nil on the legacy satellite-only campaign.
 	IPS *ips.IPS
+	// Name, Note and Shock come from campaign.json when present.
+	Name  string
+	Note  string
+	Shock *Shock
+}
+
+// Tape is the manifest's tape label: the bars' source plus the synthetic
+// suffix when a documented shock was applied.
+func (in Inputs) Tape() string {
+	if in.Shock != nil {
+		return Tape + Synthetic
+	}
+	return Tape
 }
 
 // LoadInputs reads bars.json and roster.json from the campaign directory.
@@ -135,7 +166,16 @@ func LoadInputs(dir string) (Inputs, error) {
 	if err != nil {
 		return Inputs{}, err
 	}
-	return Inputs{Roster: roster, Bars: bars, BarsSHA256: sum}, nil
+	in := Inputs{Roster: roster, Bars: bars, BarsSHA256: sum, Name: Name}
+	spec, err := LoadSpec(dir)
+	if err != nil {
+		return Inputs{}, err
+	}
+	if spec != nil {
+		in.Name, in.Note, in.IPS, in.Shock = spec.Name, spec.Note, spec.IPS, spec.Shock
+		in.Bars = spec.Shock.Apply(bars)
+	}
+	return in, nil
 }
 
 func NewManifest(gitSHA string, dirty bool, in Inputs) Manifest {
@@ -152,11 +192,18 @@ func NewManifest(gitSHA string, dirty bool, in Inputs) Manifest {
 	if in.IPS != nil {
 		ipsID, ipsHash, policy = in.IPS.ID, in.IPS.Hash(), PolicyV1
 	}
+	name := in.Name
+	if name == "" {
+		name = Name
+	}
 	return Manifest{
 		IPSID:           ipsID,
 		IPSHash:         ipsHash,
 		Policy:          policy,
-		Name:            Name,
+		IPSLine:         ipsLine(in.IPS),
+		Note:            in.Note,
+		Synthetic:       in.Shock.Describe(),
+		Name:            name,
 		Frozen:          true,
 		GitSHA:          gitSHA,
 		Dirty:           dirty,
@@ -165,12 +212,12 @@ func NewManifest(gitSHA string, dirty bool, in Inputs) Manifest {
 		StartUnixMs:     start.UnixMilli(),
 		EndUnixMs:       end.UnixMilli(),
 		Days:            Days,
-		Tape:            Tape,
+		Tape:            in.Tape(),
 		LLM:             false,
 		ScalpMode:       false,
 		Weights:         Weights,
 		CostModel:       CostModel,
-		SettingsHash:    SettingsHashIPS(roster, failing, ipsHash),
+		SettingsHash:    SettingsHashIPS(roster, failing, ipsHash+in.Shock.Describe()),
 		Universe:        universe.EquitySymbols(),
 		Benchmarks:      Benchmarks,
 		NameCap:         costs.NameCap,
@@ -191,8 +238,16 @@ func NewManifest(gitSHA string, dirty bool, in Inputs) Manifest {
 		BarsFile:        BarsFile,
 		BarsSHA256:      in.BarsSHA256,
 		BarsFetched:     fetched,
-		Reproduce:       "go run ./cmd/campaign -verify",
+		Reproduce:       ReproduceCmd(name),
 	}
+}
+
+// ReproduceCmd is the one-liner a stranger runs to check a frozen ledger.
+func ReproduceCmd(name string) string {
+	if name == "" || name == Name {
+		return "go run ./cmd/campaign -verify"
+	}
+	return "go run ./cmd/campaign -verify -name " + name
 }
 
 // SettingsHash pins every parameter a replay depends on, including which
@@ -277,6 +332,19 @@ func Load(dir string) (*Ledger, error) {
 	return &led, nil
 }
 
+// LoadAll returns every frozen ledger under campaign/, oldest-name first.
+func LoadAll() []*Ledger {
+	var out []*Ledger
+	for _, d := range LedgerDirs() {
+		led, err := Load(d)
+		if err != nil {
+			continue
+		}
+		out = append(out, led)
+	}
+	return out
+}
+
 // ErrLedgerBound: a ledger file belongs to one book. Writing a different
 // IPS (or a no-IPS book) over it is refused; use a new campaign directory.
 var ErrLedgerBound = errors.New("campaign: ledger file is bound to a different IPS")
@@ -300,8 +368,12 @@ func Save(dir string, led *Ledger) error {
 	return os.WriteFile(filepath.Join(d, LedgerFile), b, 0o644)
 }
 
-func IsFrozen() bool {
-	led, err := Load("")
+func IsFrozen() bool { return IsFrozenDir("") }
+
+// IsFrozenDir reports whether the campaign directory already holds a
+// frozen ledger.
+func IsFrozenDir(dir string) bool {
+	led, err := Load(dir)
 	return err == nil && led.Manifest.Frozen
 }
 
@@ -343,7 +415,7 @@ func FrozenIPS(id string) (hash string, frozen bool) {
 // ledgerPathspec excludes the ledger itself from dirty/diff checks: the file
 // is the output of the run, so rewriting it must not make the run "dirty".
 func ledgerPathspec() string {
-	return ":(exclude)" + filepath.ToSlash(filepath.Join(DefaultDir, LedgerFile))
+	return ":(exclude,glob)campaign/*/" + LedgerFile
 }
 
 func git(args ...string) (string, error) {

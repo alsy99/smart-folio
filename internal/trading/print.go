@@ -2,6 +2,7 @@ package trading
 
 import (
 	"context"
+	"math"
 
 	marketdatav1 "aperture/gen/marketdata/v1"
 	"aperture/pkg/broker"
@@ -63,7 +64,7 @@ func (s *Service) Print(ctx context.Context) (BookPrint, error) {
 		CoreFills:      s.lastCoreFills,
 		SatelliteFills: s.lastSatFills,
 		Core:           core,
-		Satellite:      snap.Gross - core,
+		Satellite:      math.Max(0, snap.Gross-core),
 		Halted:         broker.Halted(snap) || ddHalt,
 		Last:           last,
 		BenchStart:     copyFloatMap(s.benchStart),

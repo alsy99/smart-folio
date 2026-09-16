@@ -32,14 +32,18 @@ import (
 )
 
 func main() {
-	run := flag.Bool("run", false, "write campaign/public-30d/ledger.json (refused once frozen unless -force)")
+	run := flag.Bool("run", false, "write ledger.json in -dir / -name (refused once frozen unless -force)")
 	verify := flag.Bool("verify", false, "replay the frozen tape and match the published equity line")
 	force := flag.Bool("force", false, "allow -run to overwrite a frozen ledger")
 	fetch := flag.Bool("fetch", false, "maintainers: fetch INDstocks daily bars into bars.json")
 	roster := flag.Bool("roster", false, "maintainers: run the walk-forward as-of the window start and write roster.json")
 	barsDir := flag.String("bars", tape.DefaultDir, "daily-bar cache for the as-of roster run")
 	dir := flag.String("dir", campaign.DefaultDir, "campaign directory")
+	name := flag.String("name", "", "campaign name under campaign/ (e.g. public-30d-core); overrides -dir")
 	flag.Parse()
+	if *name != "" {
+		*dir = "campaign/" + *name
+	}
 
 	if *fetch {
 		if err := fetchBars(*dir); err != nil {
@@ -67,17 +71,17 @@ func main() {
 	}
 
 	if *run {
-		if campaign.IsFrozen() && !*force {
-			fmt.Fprintln(os.Stderr, "public 30-day campaign is frozen. Clone the SHA and use -verify. Maintainers: -run -force.")
+		if campaign.IsFrozenDir(*dir) && !*force {
+			fmt.Fprintf(os.Stderr, "%s is frozen. Clone the SHA and use -verify. Maintainers: -run -force.\n", *dir)
 			os.Exit(2)
 		}
 		if err := campaign.Save(*dir, got); err != nil {
 			fmt.Fprintf(os.Stderr, "save: %v\n", err)
 			os.Exit(1)
 		}
-		fmt.Printf("wrote %s sha=%s dirty=%v tape=%s roster=%d failing=%d days=%d fills=%d equity=%.2f\n",
-			campaign.Path(*dir), got.Manifest.GitSHA, got.Manifest.Dirty, got.Manifest.Tape,
-			len(got.Manifest.Roster), len(got.Manifest.Failing), len(got.Days), fills(got), lastEquity(got))
+		fmt.Printf("wrote %s sha=%s dirty=%v tape=%s ips=%s/%s roster=%d failing=%d days=%d fills=%d equity=%.2f halted=%v\n",
+			campaign.Path(*dir), got.Manifest.GitSHA, got.Manifest.Dirty, got.Manifest.Tape, got.Manifest.IPSID, got.Manifest.IPSHash,
+			len(got.Manifest.Roster), len(got.Manifest.Failing), len(got.Days), fills(got), lastEquity(got), lastHalt(got))
 	}
 
 	if *verify {
@@ -98,8 +102,8 @@ func main() {
 			fmt.Fprintf(os.Stderr, "equity line: %v\n", err)
 			os.Exit(1)
 		}
-		fmt.Printf("ok sha=%s tape=%s bars=%s settings=%s roster=%d failing=%d days=%d fills=%d last_equity=%.2f excess_nifty50=%+.2f%% halted=%v\n",
-			want.Manifest.GitSHA, want.Manifest.Tape, short(want.Manifest.BarsSHA256), want.Manifest.SettingsHash,
+		fmt.Printf("ok %s sha=%s tape=%s bars=%s settings=%s ips=%s roster=%d failing=%d days=%d fills=%d last_equity=%.2f excess_nifty50=%+.2f%% halted=%v\n",
+			want.Manifest.Name, want.Manifest.GitSHA, want.Manifest.Tape, short(want.Manifest.BarsSHA256), want.Manifest.SettingsHash, want.Manifest.IPSHash,
 			len(want.Manifest.Roster), len(want.Manifest.Failing), len(want.Days), fills(want), lastEquity(want), lastExcess(want), lastHalt(want))
 	}
 }

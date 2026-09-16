@@ -161,6 +161,7 @@ func ReplayDir(dir string) (*pub.Ledger, error) {
 		Log:        log,
 		Now:        clk.Now,
 		Cfg:        trading.Config{CampaignDays: pub.Days},
+		IPS:        in.IPS,
 	})
 	ctx := context.Background()
 	if _, err := svc.StartCampaign(ctx, &tradingv1.StartCampaignRequest{Days: int32(pub.Days)}); err != nil {
@@ -207,6 +208,10 @@ func ReplayDir(dir string) (*pub.Ledger, error) {
 			TurnoverINR:       pub.INR(pr.Turnover),
 			Fills:             pr.Fills,
 			Halted:            pr.Halted,
+			CoreINR:           pub.INR(pr.Core),
+			SatelliteINR:      pub.INR(pr.Satellite),
+			CoreFills:         pr.CoreFills,
+			SatelliteFills:    pr.SatelliteFills,
 		})
 	}
 	return led, nil

@@ -1,0 +1,16 @@
+{
+  "name": "public-30d-fold",
+  "ips": {
+    "id": "ips-b-core80-fold",
+    "goal": "beat_nifty",
+    "horizonYears": 5,
+    "maxDd": 0.15,
+    "benchmark": "NIFTY50",
+    "corePct": 0.8,
+    "satellitePct": 0.2,
+    "rebalance": "monthly",
+    "startCash": 1000000,
+    "foldSatellite": true
+  },
+  "note": "IPS B: core 80% / satellite 20% with fold-in. No method cleared the gate as-of the window, so the empty satellite slice folds into the core and the book should match A."
+}

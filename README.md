@@ -22,23 +22,36 @@ This is educational software. It is **not** financial advice. It does **not** gu
 
 Quotes and bars use the [INDstocks API](https://api-docs.indstocks.com/api-overview/) when `INDSTOCKS_ACCESS_TOKEN` is set. Fills stay on the **paper book**. Live order routing is **compile-time off** (`-tags liveorders` is not used by `cmd/`). `AUTOPILOT_LIVE_IND` is ignored. There is no environment flag that enables live routing.
 
-## Public 30-day paper campaign
+## Core and satellite
 
-Frozen ledger: `campaign/public-30d/ledger.json`. Same git SHA, settings, universe, and delivery cost model. Window **17 Aug 2026 09:15 IST → 16 Sep 2026 09:15 IST**. Daily prints: equity, excess vs Nifty 50 / Nifty 500 / Sensex, drawdown, turnover, fills, halted-or-not. Restart and weight edits are refused while the ledger is frozen.
+An IPS (Policy tab) splits the book. The **core** is always invested unless the client's drawdown cap is hit: equal-weight over the twelve campaign names, rebalanced on the last NSE session of the month, tickets through `pkg/broker` and `pkg/costs`. Sentiment never tilts it. The **satellite** is empty until a method clears the walk-forward gate, and is capped at 20% of equity. Learning updates satellite weights only; a new IPS is the only way the core mix changes.
+
+`make review` prints closes by method **and** periods grouped by IPS id and sleeve.
+
+## Public 30-day paper campaigns
+
+Four frozen ledgers, same window **17 Aug 2026 09:15 IST → 16 Sep 2026 09:15 IST**, same INDstocks daily tape, same delivery cost model. Daily prints: equity, excess vs Nifty 50 / Nifty 500 / Sensex, drawdown, turnover, fills, halted-or-not. Restart and IPS edits are refused while a ledger is frozen.
+
+| Book | IPS | What the published line is |
+|------|-----|----------------------------|
+| `campaign/public-30d/` | none (pre-IPS) | Empty roster, **₹10,00,000 cash, 0 fills**. Historical truth; do not overwrite. |
+| `campaign/public-30d-core/` | A: 100% core vs Nifty 50, monthly | Invested equal-weight 12 names (~81% after name/sector/gross rails). Excess vs Nifty is **costs + sampling**, not skill — do not tune it to win. |
+| `campaign/public-30d-fold/` | B: 80/20, fold-in, satellite empty | Same equity as A to the rupee: nothing cleared the gate, so the satellite slice folds into core. |
+| `campaign/public-30d-halt/` | C: same as A | Documented synthetic: every series ×0.80 from 1 Sep 2026. Halt fires at 15% drawdown; the core holds; **no new buys after**. |
 
 ```bash
 go run ./cmd/campaign -verify
-# or
+go run ./cmd/campaign -verify -name public-30d-core
 go test ./internal/campaign -count=1
 ```
 
-A stranger who clones that SHA must match the published equity line within ₹1. The tape is **INDstocks daily history**, checked in as `campaign/public-30d/bars.json` (traded names and Nifty 50 / Sensex from `indstocks-1d`; Nifty 500 from a public daily series because the broker's history endpoint rejects that index — named per series in the file) and pinned by sha256 in the manifest. One tick per session at 15:30 IST, filled at that session's close (MOC); a 09:15 quote is the prior close, so nothing sees a print before it exists. LLM off. Weights are equal across the roster and **0 for failing defaults**, frozen for 30 days. Do not edit parameters mid-campaign.
+A stranger who clones that SHA must match each published equity line within ₹1. The tape is **INDstocks daily history**, checked in as `bars.json` in each campaign directory (traded names and Nifty 50 / Sensex from `indstocks-1d`; Nifty 500 from a public daily series because the broker's history endpoint rejects that index — named per series in the file) and pinned by sha256 in the manifest. One tick per session at 15:30 IST, filled at that session's close (MOC); a 09:15 quote is the prior close. LLM off. Weights are equal across the roster and **0 for failing defaults**, frozen for 30 days.
 
-The roster the campaign traded on is `campaign/public-30d/roster.json`: the five-year walk-forward run **as-of 14 Aug 2026**, the last session before the window, so the gate cannot see into the campaign. On that tape every shipped default failed the gate, the roster is empty, and the published line is the honest consequence: **₹10,00,000 flat, 0 fills**. Excess vs the indices is whatever the indices did. That is the number a stranger should see — not the ungated defaults, which would make the gate decoration.
+The roster each campaign traded on is that directory's `roster.json`: the five-year walk-forward run **as-of 14 Aug 2026**, the last session before the window, so the gate cannot see into the campaign. On that tape every shipped default failed the gate.
 
-Maintainers (INDstocks token required): `go run ./cmd/campaign -fetch` writes `bars.json`; `-roster` writes `roster.json`; then `-run -force` on a clean commit and commit the ledger alone.
+Maintainers (INDstocks token required): `go run ./cmd/campaign -fetch` writes `bars.json`; `-roster` writes `roster.json`; then `-run -name public-30d-core -force` on a clean commit and commit the ledger **alone**.
 
-Provenance is tested, not asserted: `go test ./internal/campaign` fails if the manifest's `gitSha` was written from a dirty tree, if the working-tree ledger differs from the committed one, or if the commit that last wrote `ledger.json` is not the recorded SHA (or a commit that changed nothing but the ledger). Maintainers regenerate with `go run ./cmd/campaign -run -force` on a clean commit and commit the ledger **alone** immediately after. CI checks out with `fetch-depth: 0` for this.
+Provenance is tested, not asserted: `go test ./internal/campaign` fails if a manifest's `gitSha` was written from a dirty tree, if a working-tree ledger differs from the committed one, or if the commit that last wrote that `ledger.json` is not the recorded SHA (or a commit that changed nothing but the ledger). Maintainers regenerate with `go run ./cmd/campaign -run -name <book> -force` on a clean commit and commit the ledger **alone** immediately after. CI checks out with `fetch-depth: 0` for this.
 
 Live exchange orders stay off until all of these exist: a written (exchange-filed) strategy spec, a broker principal path, Algo-ID tagging, a static IP for order endpoints, an order-rate cap under the exchange threshold, a kill switch a human can hit (Stop Autopilot / `data/KILL`), and the disclosure that **+10pp vs Nifty is a target, not a promise**. Selling access to others is a different license.
 
@@ -84,7 +97,7 @@ Open [http://127.0.0.1:43127](http://127.0.0.1:43127). With `AUTOSTART_CAMPAIGN=
 
 ```
 apps/web          Next.js desk
-campaign/         frozen public 30-day paper ledger
+campaign/         frozen public 30-day paper ledgers (cash month + policy A/B/C)
 cmd/              thin binaries (config, wiring, serve)
 LICENSE           Apache-2.0
 internal/         service implementations (not importable outside the module)

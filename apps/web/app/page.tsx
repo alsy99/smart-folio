@@ -4,6 +4,7 @@ import { Suspense, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { AdvisorTooltip } from "@/components/advisor-tooltip";
 import { BookPanel } from "@/components/desk/book-panel";
+import { CampaignPanel } from "@/components/desk/campaign-panel";
 import { Stat } from "@/components/desk/hero";
 import { IPSForm } from "@/components/desk/ips-form";
 import { LabPanel } from "@/components/desk/lab-panel";
@@ -327,6 +328,7 @@ function DeskShell() {
                 onSave={desk.saveIPS}
               />
             )}
+            {tab === "campaign" && <CampaignPanel desk={desk} />}
             {tab === "research" && <ResearchPanel desk={desk} />}
             {tab === "lab" && <LabPanel desk={desk} />}
           </div>

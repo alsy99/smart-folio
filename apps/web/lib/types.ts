@@ -198,6 +198,10 @@ export type PublicDay = {
   turnoverInr: number;
   fills: number;
   halted: boolean;
+  coreInr?: number;
+  satelliteInr?: number;
+  coreFills?: number;
+  satelliteFills?: number;
 };
 
 export type PublicManifest = {
@@ -227,11 +231,18 @@ export type PublicManifest = {
   rosterAsOf?: string;
   barsSha256?: string;
   reproduce: string;
+  ipsLine?: string;
+  note?: string;
+  synthetic?: string;
 };
 
 export type PublicCampaign = {
   manifest: PublicManifest;
   days: PublicDay[];
+};
+
+export type PublicCampaigns = {
+  campaigns: PublicCampaign[];
 };
 
 /** policy.v1.CoreWeight */

@@ -1,0 +1,21 @@
+{
+  "name": "public-30d-halt",
+  "ips": {
+    "id": "ips-c-core100-halt",
+    "goal": "beat_nifty",
+    "horizonYears": 5,
+    "maxDd": 0.15,
+    "benchmark": "NIFTY50",
+    "corePct": 1,
+    "satellitePct": 0,
+    "rebalance": "monthly",
+    "startCash": 1000000,
+    "foldSatellite": true
+  },
+  "shock": {
+    "from": "2026-09-01",
+    "factor": 0.8,
+    "note": "documented synthetic: every series marked down 20% from 1 Sep 2026 so the client drawdown cap fires; the real tape did not fall that far"
+  },
+  "note": "IPS C: same policy as A on a synthetic fixture. The book halts at min(15%, cap) drawdown from peak, holds, and places no new buys after."
+}

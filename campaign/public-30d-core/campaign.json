@@ -1,0 +1,16 @@
+{
+  "name": "public-30d-core",
+  "ips": {
+    "id": "ips-a-core100",
+    "goal": "beat_nifty",
+    "horizonYears": 5,
+    "maxDd": 0.15,
+    "benchmark": "NIFTY50",
+    "corePct": 1,
+    "satellitePct": 0,
+    "rebalance": "monthly",
+    "startCash": 1000000,
+    "foldSatellite": true
+  },
+  "note": "IPS A: core 100% equal-weight over the twelve names, monthly calendar rebalance, satellite empty. Tracks Nifty minus costs; excess is costs plus sampling, not skill."
+}

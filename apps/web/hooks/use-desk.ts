@@ -38,13 +38,14 @@ export function useDesk() {
   const [btBusy, setBtBusy] = useState(false);
   const [health, setHealth] = useState<Health | null>(null);
   const [pub, setPub] = useState<PublicCampaign | null>(null);
+  const [campaigns, setCampaigns] = useState<PublicCampaign[]>([]);
   const [ips, setIPS] = useState<IPS | null>(null);
   const [ipsMissing, setIPSMissing] = useState(false);
   const [targets, setTargets] = useState<Targets | null>(null);
 
   const refresh = useCallback(async () => {
     try {
-      const [p, c, b, j, inv, n, s, bt, rs, h, pubCamp] = await Promise.all([
+      const [p, c, b, j, inv, n, s, bt, rs, h, pubCamp, pubs] = await Promise.all([
         api.portfolio(),
         api.campaign(),
         api.benchmarks(),
@@ -56,6 +57,7 @@ export function useDesk() {
         api.research().catch(() => ({ picks: [] as PickResearch[] })),
         api.health().catch(() => null),
         api.publicCampaign().catch(() => null),
+        api.publicCampaigns().catch(() => ({ campaigns: [] as PublicCampaign[] })),
       ]);
       setPortfolio(p);
       setCampaign(c);
@@ -68,6 +70,7 @@ export function useDesk() {
       setBacktest(bt);
       setHealth(h);
       setPub(pubCamp);
+      setCampaigns(pubs?.campaigns ?? []);
       setErr(null);
       // The IPS id lives on this browser session; the statement lives on
       // the policy service. No id yet is a first run, not an error.
@@ -197,6 +200,7 @@ export function useDesk() {
     backtest,
     health,
     pub,
+    campaigns,
     nifty,
     onTrack,
     positions,
