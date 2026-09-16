@@ -20,6 +20,7 @@ import { ipsLine } from "@/lib/ips";
 import { rosterIsDefault, rosterLine } from "@/lib/roster";
 import { satelliteEmpty, satelliteState, TARGET_NOT_PROMISE } from "@/lib/satellite";
 import { fillAllowed } from "@/lib/session";
+import { HALT_HOLDS } from "@/lib/core";
 
 function sessionLabel(status?: string, marketOpen?: boolean) {
   if (!status && marketOpen == null) return "—";
@@ -245,17 +246,17 @@ function DeskShell() {
               label={frozen ? "Frozen paper equity" : isMock ? "Mock paper equity" : "Paper equity"}
               value={lastDay ? inr(lastDay.equity) : portfolio ? inr(portfolio.equity) : "—"}
               hint={
-                frozen
-                  ? lastDay?.halted
-                    ? "Halted · 15% peak-to-trough"
-                    : `Drawdown ${pct(lastDay?.drawdownPct || 0)}`
+                frozen && lastDay
+                  ? `Drawdown ${pct(lastDay.drawdownPct)} · ${HALT_HOLDS}`
                   : isMock
                     ? "Synthetic. Not live NSE."
                     : portfolio
                       ? `Cash ${inr(portfolio.cash)}`
                       : "Awaiting a campaign"
               }
+              wrapHint={Boolean(frozen && lastDay)}
               tone={isMock && !frozen ? "bad" : lastDay?.halted ? "bad" : undefined}
+              testId="hero-dd"
             />
             <Stat
               label="Versus Nifty 50"

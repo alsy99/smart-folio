@@ -3,6 +3,9 @@ import type { Targets } from "./types";
 /** Desk copy for the core sleeve. */
 export const CORE_STAYS_INVESTED = "Core stays invested unless your drawdown cap is hit.";
 
+/** Under every DD figure: halt is a buy stop, not a 15% floor on marks. */
+export const HALT_HOLDS = "Halt = no new buys. Marks can still go through 15%.";
+
 /** Rows for the Book "core vs target" table, largest drift first. */
 export function coreRows(t: Targets | null | undefined) {
   if (!t?.core?.length) return [];

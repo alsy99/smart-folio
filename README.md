@@ -30,14 +30,14 @@ An IPS (Policy tab) splits the book. The **core** is always invested unless the 
 
 ## Public 30-day paper campaigns
 
-Four frozen ledgers, same window **17 Aug 2026 09:15 IST → 16 Sep 2026 09:15 IST**, same INDstocks daily tape, same delivery cost model. Daily prints: equity, excess vs Nifty 50 / Nifty 500 / Sensex, drawdown, turnover, fills, halted-or-not. Restart and IPS edits are refused while a ledger is frozen.
+Four frozen ledgers, same window **17 Aug 2026 09:15 IST → 16 Sep 2026 09:15 IST**, same INDstocks daily tape, same delivery cost model. Daily prints: equity, excess vs Nifty 50 / Nifty 500 / Sensex, drawdown, turnover, fills, halted-or-not. Restart and IPS edits are refused while a ledger is frozen. **Leave these four frozen.** Next evidence is a second 30-day core book **after 16 Oct 2026**, same IPS A, new directory `campaign/public-30d-core-2/` — do not extend or overwrite `public-30d-core/`.
 
 | Book | IPS | What the published line is |
 |------|-----|----------------------------|
 | `campaign/public-30d/` | none (pre-IPS) | Empty roster, **₹10,00,000 cash, 0 fills**. Historical truth; do not overwrite. |
 | `campaign/public-30d-core/` | A: 100% core vs Nifty 50, monthly | Invested equal-weight 12 names (~81% after name/sector/gross rails). Excess vs Nifty is **costs + sampling**, not skill — do not tune it to win. |
 | `campaign/public-30d-fold/` | B: 80/20, fold-in, satellite empty | Same equity as A to the rupee: nothing cleared the gate, so the satellite slice folds into core. |
-| `campaign/public-30d-halt/` | C: same as A | Documented synthetic: every series ×0.80 from 1 Sep 2026. Halt fires at 15% drawdown; the core holds; **no new buys after**. |
+| `campaign/public-30d-halt/` | C: same as A | Documented synthetic: every series ×0.80 from 1 Sep 2026. Halt fires at 15% drawdown; the core holds; **no new buys after**. Marks can still go through 15%. |
 
 ```bash
 go run ./cmd/campaign -verify
@@ -53,7 +53,7 @@ Maintainers (INDstocks token required): `go run ./cmd/campaign -fetch` writes `b
 
 Provenance is tested, not asserted: `go test ./internal/campaign` fails if a manifest's `gitSha` was written from a dirty tree, if a working-tree ledger differs from the committed one, or if the commit that last wrote that `ledger.json` is not the recorded SHA (or a commit that changed nothing but the ledger). Maintainers regenerate with `go run ./cmd/campaign -run -name <book> -force` on a clean commit and commit the ledger **alone** immediately after. CI checks out with `fetch-depth: 0` for this.
 
-Live exchange orders stay off until all of these exist: a written (exchange-filed) strategy spec, a broker principal path, Algo-ID tagging, a static IP for order endpoints, an order-rate cap under the exchange threshold, a kill switch a human can hit (Stop Autopilot / `data/KILL`), and the disclosure that **+10pp vs Nifty is a target, not a promise**. The paper description of what the book does today is [`docs/spec.md`](docs/spec.md) (core monthly rebalance, empty satellite). That file is **not** an exchange filing and does not arm orders. Selling access to others is a different license.
+Live exchange orders stay off until all of these exist: a written (exchange-filed) strategy spec, a broker principal path, Algo-ID tagging, a static IP for order endpoints, an order-rate cap under the exchange threshold, a kill switch a human can hit (Stop Autopilot / `data/KILL`), and the disclosure that **+10pp vs Nifty is a target, not a promise**. The paper description of what the book does today is [`docs/spec.md`](docs/spec.md) (core monthly rebalance, empty satellite). Take that file to the broker conversation; do not send `orders_on.go`. That file is **not** an exchange filing and does not arm orders. Selling access to others is a different license.
 
 ## Run locally
 
@@ -99,7 +99,7 @@ Open [http://127.0.0.1:43127](http://127.0.0.1:43127). With `AUTOSTART_CAMPAIGN=
 apps/web          Next.js desk
 campaign/         frozen public 30-day paper ledgers (cash month + policy A/B/C)
 cmd/              thin binaries (config, wiring, serve)
-docs/             paper strategy spec (core + empty satellite; not an exchange filing)
+docs/             paper strategy spec + broker packet (not an exchange filing)
 LICENSE           Apache-2.0
 internal/         service implementations (not importable outside the module)
 pkg/              shared libraries (strategies, prices, config, serve)

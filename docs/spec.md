@@ -50,9 +50,35 @@ There is no “index-like” path that skips costs.
 
 Halt threshold = `min(0.15, ips.MaxDD)` on **total-equity** peak-to-trough.
 
-When halted: **no new buys**. The core holds; it does not liquidate to cash. The log line is `MAX_DRAWDOWN` once for the book and `CORE_HALT` once for the sleeve. Halt lifts only if equity recovers above the cap (it did not, on the synthetic halt fixture).
+When halted: **no new buys**. The core holds; it does not liquidate to cash. Marks can still print through 15% — the cap is a buy stop, not a floor on the path. The log line is `MAX_DRAWDOWN` once for the book and `CORE_HALT` once for the sleeve. Halt lifts only if equity recovers above the cap (it did not, on the synthetic halt fixture).
 
-Published halt path: `campaign/public-30d-halt/` (documented −20% shock from 1 Sep 2026 on every series; bars.json itself is the real tape).
+Desk copy under every DD figure: “Halt = no new buys. Marks can still go through 15%.”
+
+Published halt path: `campaign/public-30d-halt/` (documented −20% shock from 1 Sep 2026 on every series; bars.json itself is the real tape). Do not overwrite it.
+
+## Next published book
+
+The four ledgers under `campaign/` stay frozen (`public-30d`, `public-30d-core`, `public-30d-fold`, `public-30d-halt`). The next evidence is a second 30-day core book **after 16 Oct 2026**, same IPS A (`ips-a-core100`, 100% core vs Nifty 50, monthly), new directory `campaign/public-30d-core-2/`. Same tape family, new window, roster as-of the session before that window. Do not extend or overwrite `public-30d-core/`.
+
+## Phase 8 — flatten-on-halt (not built)
+
+Today’s 15% is not a customer cap on marks. If the product should refuse a path through 15%, that is **flatten-on-halt**: sell the book to cash when the cap hits. It is a new rule, not a rewrite of C.
+
+Do it in this order:
+
+1. Cost and tax of a full flatten (delivery STT both ways, stamp, slippage on a shock tape) in a table, **before** any ticket.
+2. A **new** halt ledger directory. Leave `public-30d-halt/` as the hold-not-flatten fixture.
+3. Then change the allocator.
+
+Until then, do not tell a client the 15% cap is a floor on marks.
+
+## Broker conversation
+
+Take [`docs/spec.md`](spec.md) as the attachment. It is the paper book: universe, calendar, drift, costs, halt-as-hold, empty satellite. It is not an NSE filing and not a live-order enablement.
+
+Do **not** send `pkg/indstocks/orders_on.go`, a live-orders tag, or a hidden enable switch. `PlaceOrder` stays compile-off. The conversation is rails, Algo-ID, principal path, and this spec — not an order adapter.
+
+A short agenda is in [`docs/broker.md`](broker.md).
 
 ## Satellite gate
 

@@ -11,7 +11,7 @@ import {
 } from "recharts";
 import { Empty } from "@/components/desk/hero";
 import type { useDesk } from "@/hooks/use-desk";
-import { CORE_STAYS_INVESTED, coreInvested, coreRows, rebalanceLine } from "@/lib/core";
+import { CORE_STAYS_INVESTED, coreInvested, coreRows, HALT_HOLDS, rebalanceLine } from "@/lib/core";
 import { mockTape } from "@/lib/tape";
 import { NO_CORE_YET, SATELLITE_EMPTY, SATELLITE_EMPTY_WHY, satelliteEmpty } from "@/lib/satellite";
 import { fillAllowed } from "@/lib/session";
@@ -115,6 +115,9 @@ export function BookPanel({ desk }: { desk: ReturnType<typeof useDesk> }) {
           <h2 className="scroll-mt-6 text-lg font-semibold tracking-tight">Daily print</h2>
           <p className="mt-1 text-sm text-steel">
             Equity, excess vs Nifty 50 / Nifty 500 / Sensex, drawdown, turnover, fills, halted-or-not.
+          </p>
+          <p data-testid="halt-holds" className="mt-1 text-sm text-steel">
+            {HALT_HOLDS}
           </p>
           <div className="mt-3 overflow-x-auto">
             <table className="w-full min-w-[44rem] text-left text-sm">

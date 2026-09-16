@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { coreInvested, coreRows, rebalanceLine } from "./core";
+import { coreInvested, coreRows, HALT_HOLDS, rebalanceLine } from "./core";
 import type { Targets } from "./types";
 
 const t: Targets = {
@@ -33,5 +33,8 @@ describe("core desk helpers", () => {
     expect(rebalanceLine(t, "monthly")).toMatch(/2026-09-30/);
     expect(rebalanceLine({ ...t, rebalanceSession: true }, "monthly")).toMatch(/Today/);
     expect(rebalanceLine(null)).toMatch(/No IPS/);
+  });
+  it("says halt is a buy stop, not a 15% floor on marks", () => {
+    expect(HALT_HOLDS).toBe("Halt = no new buys. Marks can still go through 15%.");
   });
 });

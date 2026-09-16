@@ -6,12 +6,14 @@ export function Stat({
   hint,
   tone,
   testId,
+  wrapHint,
 }: {
   label: string;
   value: string;
   hint?: string;
   tone?: "good" | "bad" | "warn";
   testId?: string;
+  wrapHint?: boolean;
 }) {
   const color =
     tone === "good" ? "text-up" : tone === "bad" ? "text-down" : tone === "warn" ? "text-brass" : "text-ink";
@@ -23,7 +25,7 @@ export function Stat({
         {value}
       </p>
       {hint ? (
-        <p className={cn("mt-0.5 truncate text-sm", hintColor)} title={hint}>
+        <p className={cn("mt-0.5 text-sm", wrapHint ? "text-pretty" : "truncate", hintColor)} title={hint}>
           {hint}
         </p>
       ) : null}
