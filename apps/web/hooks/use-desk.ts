@@ -85,32 +85,24 @@ export function useDesk() {
         setIPSMissing(true);
         setTargets(null);
       }
-      if (pubCamp?.days?.length) {
-        setHistory(
-          pubCamp.days.map((d) => ({
-            t: d.date.slice(5),
-            equity: d.equity,
-            nifty: 0,
-          }))
-        );
-      } else {
-        const niftyPt = b.benchmarks?.find((x) => x.id === "NIFTY50");
-        setHistory((prev) => {
-          const next = [
-            ...prev,
-            {
-              t: new Date().toLocaleTimeString("en-IN", {
-                hour: "2-digit",
-                minute: "2-digit",
-                second: "2-digit",
-              }),
-              equity: p.equity,
-              nifty: niftyPt ? niftyPt.start * (1 + niftyPt.returnPct / 100) : 0,
-            },
-          ];
-          return next.slice(-24);
-        });
-      }
+      // Live paper marks, not the frozen public ledger. Published days live
+      // on the Campaign tab so a new IPS is not drawn as last month's cash.
+      const niftyPt = b.benchmarks?.find((x) => x.id === "NIFTY50");
+      setHistory((prev) => {
+        const next = [
+          ...prev,
+          {
+            t: new Date().toLocaleTimeString("en-IN", {
+              hour: "2-digit",
+              minute: "2-digit",
+              second: "2-digit",
+            }),
+            equity: p.equity,
+            nifty: niftyPt ? niftyPt.start * (1 + niftyPt.returnPct / 100) : 0,
+          },
+        ];
+        return next.slice(-24);
+      });
     } catch (e) {
       setErr(e instanceof Error ? e.message : "gateway unreachable");
     } finally {

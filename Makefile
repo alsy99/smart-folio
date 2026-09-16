@@ -1,8 +1,7 @@
-.PHONY: proto tidy test secrets backend web dev-backend review campaign
+.PHONY: proto tidy test secrets backend web dev-backend review campaign public
 
 export PATH := $(PATH):$(HOME)/go/bin
 export AUTOSTART_CAMPAIGN ?= true
-export NEXT_PUBLIC_API_URL ?= http://127.0.0.1:8080
 
 proto:
 	protoc -I . \
@@ -38,3 +37,6 @@ dev-backend:
 
 web:
 	cd apps/web && npx next dev --turbopack -p 43127 -H 0.0.0.0
+
+public:
+	bash scripts/dev-public.sh

@@ -16,13 +16,21 @@ export function campaignTapeHint(m: PublicManifest): string {
   return `${m.tape} · MOC fills · ${book}. Clone the SHA to replay.`;
 }
 
-/** Hero copy when the INDstocks token is missing: MOCK, never a pretty fake +8%. */
+/** Token is present but INDstocks rejected it (401 / degraded). Not the same as missing. */
+export function deadINDstocksToken(health: Health | null): boolean {
+  const ind = health?.indstocks;
+  return Boolean(ind?.configured && ind.mode !== "live");
+}
+
+/** Hero copy when the INDstocks token is missing or dead: MOCK, never a pretty fake +8%. */
 export function heroTape(health: Health | null): { label: string; value: string; hint: string } {
   if (mockTape(health)) {
     return {
       label: "Tape",
       value: "MOCK",
-      hint: "No INDstocks token. Not live NSE.",
+      hint: deadINDstocksToken(health)
+        ? "INDstocks token expired or invalid. Refresh it — not live NSE."
+        : "No INDstocks token. Not live NSE.",
     };
   }
   return {
@@ -41,4 +49,11 @@ export function heroExcess(health: Health | null, liveExcessPct: number | undefi
   }
   const n = liveExcessPct as number;
   return `${n >= 0 ? "+" : ""}${n.toFixed(2)}%`;
+}
+
+export function heroExcessHint(health: Health | null): string {
+  if (deadINDstocksToken(health)) {
+    return "INDstocks token expired. Not a live excess vs Nifty.";
+  }
+  return "Mock tape. Not a live excess vs Nifty.";
 }

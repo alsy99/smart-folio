@@ -37,4 +37,23 @@ describe("missing INDstocks token", () => {
     expect(mockTape(null)).toBe(true);
     expect(heroTape(null).value).toBe("MOCK");
   });
+
+  it("says expired when a token is present but INDstocks rejects it", () => {
+    const dead = {
+      status: "ok" as const,
+      tape: "mock" as const,
+      indstocks: {
+        configured: true,
+        mode: "degraded",
+        profileOk: false,
+        scrips: 15,
+        orders: "compile-off",
+        error: "http 401",
+      },
+    };
+    expect(mockTape(dead)).toBe(true);
+    expect(heroTape(dead).hint).toMatch(/expired or invalid/i);
+    expect(heroTape(dead).hint).not.toMatch(/No INDstocks token/);
+    expect(heroExcess(dead, 8)).toBe("MOCK");
+  });
 });

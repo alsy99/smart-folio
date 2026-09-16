@@ -206,12 +206,13 @@ export function IPSForm({
         <Input
           type="number"
           min={1}
-          step={1000}
+          step={1}
           value={form.startCash}
           disabled={Boolean(current) || frozen}
           onChange={(e) => set("startCash", Number(e.target.value))}
           className="mt-1"
         />
+        <span className="text-xs text-steel">Any positive rupee amount. Paper default is ₹10,00,000.</span>
       </label>
 
       {(error || built.error) && (

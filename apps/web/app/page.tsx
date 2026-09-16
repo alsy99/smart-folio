@@ -13,9 +13,9 @@ import { SessionIris } from "@/components/desk/session-iris";
 import { DeskTabs, isDeskTab, type DeskTab } from "@/components/desk/tabs";
 import { Button } from "@/components/ui/button";
 import { useDesk } from "@/hooks/use-desk";
-import { inr, istStamp, pct, shortSha } from "@/lib/utils";
+import { inr, istStamp, pct } from "@/lib/utils";
 import { mockTape } from "@/lib/tape";
-import { campaignTapeHint, heroExcess, heroTape } from "@/lib/hero";
+import { heroExcess, heroExcessHint, heroTape } from "@/lib/hero";
 import { ipsLine } from "@/lib/ips";
 import { rosterIsDefault, rosterLine } from "@/lib/roster";
 import { satelliteEmpty, satelliteState, TARGET_NOT_PROMISE } from "@/lib/satellite";
@@ -66,20 +66,14 @@ function DeskShell() {
   } = desk;
   const open = Boolean(campaign?.marketOpen);
   const isMock = mockTape(health);
-  const frozen = Boolean(pub?.manifest?.frozen);
-  const lastDay = pub?.days?.length ? pub.days[pub.days.length - 1] : null;
+  const published = Boolean(pub?.manifest?.frozen);
   const tape = heroTape(health);
-  // Phase 0 honesty: with every method at weight 0 and no IPS core yet, the
-  // desk says SATELLITE EMPTY and CASH rather than rendering failed methods
-  // as live. The frozen cash ledger (roster []) reads the same way.
-  const satEmpty = satelliteEmpty(portfolio?.weights) || Boolean(frozen && pub && (pub.manifest.roster?.length ?? 0) === 0 && pub.manifest.failing?.length);
-  const satellite = satelliteState(
-    satEmpty && !satelliteEmpty(portfolio?.weights)
-      ? (pub?.manifest.failing ?? []).map((id) => ({ strategyId: id, weight: 0, expectancy: 0, winRate: 0, regime: "failing-gate" }))
-      : portfolio?.weights,
-    Boolean(desk.ips),
-  );
-  const niftyHero = isMock ? heroExcess(health, nifty?.excessPct) : lastDay ? pct(lastDay.excessNifty50Pct) : nifty ? pct(nifty.excessPct) : "—";
+  // Phase 0 honesty: with every method at weight 0 the desk says SATELLITE
+  // EMPTY rather than rendering failed methods as live. Use this session's
+  // weights, not the frozen cash-month roster.
+  const satEmpty = satelliteEmpty(portfolio?.weights);
+  const satellite = satelliteState(portfolio?.weights, Boolean(desk.ips));
+  const niftyHero = isMock ? heroExcess(health, nifty?.excessPct) : nifty ? pct(nifty.excessPct) : "—";
 
   function setTab(id: DeskTab) {
     const next = new URLSearchParams(searchParams.toString());
@@ -134,19 +128,17 @@ function DeskShell() {
                   {sessionLabel(campaign?.sessionStatus, campaign?.marketOpen)}
                 </p>
                 <p className="mt-1 text-sm whitespace-normal text-steel">
-                  {frozen && pub
-                    ? `Frozen SHA ${shortSha(pub.manifest.gitSha)} · ${istStamp(pub.manifest.startUnixMs)} → ${istStamp(pub.manifest.endUnixMs)} IST`
-                    : campaign?.active
-                      ? `Day ${campaign.daysElapsed} of ${campaign.daysTotal}, ${campaign.ticks} ticks, ${campaign.autopilot ? "autopilot on" : "paused"} · ${istStamp(campaign.startedAtUnixMs)} → ${istStamp(campaign.endsAtUnixMs)} IST`
-                      : "No campaign running"}
+                  {campaign?.active
+                    ? `Day ${campaign.daysElapsed} of ${campaign.daysTotal}, ${campaign.ticks} ticks, ${campaign.autopilot ? "autopilot on" : "paused"} · ${istStamp(campaign.startedAtUnixMs)} → ${istStamp(campaign.endsAtUnixMs)} IST`
+                    : "No campaign running"}
                 </p>
               </div>
             </div>
             <div className="flex flex-wrap items-center gap-2">
               <AdvisorTooltip sentiment={sentiment} />
-              {frozen ? (
-                <Button disabled>
-                  Book frozen
+              {published ? (
+                <Button disabled title="Published ledgers stay frozen. This session is the live paper book.">
+                  Published ledgers frozen
                 </Button>
               ) : pending === "restart" ? (
                 <>
@@ -191,18 +183,14 @@ function DeskShell() {
             </div>
           )}
 
-          {frozen && pub && (
+          {published && pub && (
             <div
               role="status"
               className="mt-6 border border-ink/15 bg-paper px-4 py-3 text-sm text-ink"
             >
-              Public 30-day paper campaign is frozen on {pub.manifest.tape}. Same SHA, settings, universe, and
-              delivery cost model. Roster as-of {pub.manifest.rosterAsOf ?? "—"}:{" "}
-              {pub.manifest.roster?.length ? pub.manifest.roster.join(", ") : "none cleared the gate"}
-              {pub.manifest.failing?.length
-                ? ` · failing at weight 0: ${pub.manifest.failing.join(", ")}`
-                : ""}
-              . Reproduce with <span className="font-mono text-xs">{pub.manifest.reproduce}</span>.
+              Published 30-day ledgers are frozen on {pub.manifest.tape} (Campaign tab). This Book is today&apos;s live
+              paper session. Reproduce a ledger with{" "}
+              <span className="font-mono text-xs">{pub.manifest.reproduce}</span>.
             </div>
           )}
 
@@ -243,19 +231,17 @@ function DeskShell() {
 
           <section className="mt-6 grid grid-cols-1 gap-6 border-b border-rule pb-6 sm:grid-cols-2 xl:grid-cols-4">
             <Stat
-              label={frozen ? "Frozen paper equity" : isMock ? "Mock paper equity" : "Paper equity"}
-              value={lastDay ? inr(lastDay.equity) : portfolio ? inr(portfolio.equity) : "—"}
+              label={isMock ? "Mock paper equity" : "Paper equity"}
+              value={portfolio ? inr(portfolio.equity) : "—"}
               hint={
-                frozen && lastDay
-                  ? `Drawdown ${pct(lastDay.drawdownPct)} · ${HALT_HOLDS}`
-                  : isMock
-                    ? "Synthetic. Not live NSE."
-                    : portfolio
-                      ? `Cash ${inr(portfolio.cash)}`
-                      : "Awaiting a campaign"
+                isMock
+                  ? "Synthetic. Not live NSE."
+                  : portfolio
+                    ? `Cash ${inr(portfolio.cash)} · ${HALT_HOLDS}`
+                    : "Awaiting a campaign"
               }
-              wrapHint={Boolean(frozen && lastDay)}
-              tone={isMock && !frozen ? "bad" : lastDay?.halted ? "bad" : undefined}
+              wrapHint
+              tone={isMock ? "bad" : undefined}
               testId="hero-dd"
             />
             <Stat
@@ -263,36 +249,22 @@ function DeskShell() {
               value={niftyHero}
               hint={
                 isMock
-                  ? "Mock tape. Not a live excess vs Nifty."
-                  : lastDay
-                    ? `Nifty 500 ${pct(lastDay.excessNifty500Pct)} · Sensex ${pct(lastDay.excessSensexPct)}`
-                    : nifty
-                      ? `Target, not a promise · annualised ${pct(nifty.excessAnnPct)}`
-                      : "Start a campaign"
+                  ? heroExcessHint(health)
+                  : nifty
+                    ? `Target, not a promise · annualised ${pct(nifty.excessAnnPct)}`
+                    : "Start a campaign"
               }
-              tone={isMock ? "bad" : (lastDay ? lastDay.excessNifty50Pct : nifty?.excessPct || 0) >= 0 ? "good" : "bad"}
+              tone={isMock ? "bad" : (nifty?.excessPct || 0) >= 0 ? "good" : "bad"}
             />
             <Stat
-              label={satEmpty ? "Satellite" : frozen ? "Halt" : "Ten-point track"}
-              value={
-                satEmpty
-                  ? satellite.value
-                  : frozen
-                    ? lastDay?.halted
-                      ? "Halted"
-                      : "Not halted"
-                    : onTrack
-                      ? "On track"
-                      : "Off pace"
-              }
+              label={satEmpty ? "Satellite" : "Ten-point track"}
+              value={satEmpty ? satellite.value : onTrack ? "On track" : "Off pace"}
               hint={
                 satEmpty
                   ? satellite.hint
-                  : frozen && lastDay
-                    ? `Turnover ${pct(lastDay.turnoverPct)} · ${lastDay.fills} fills on last session`
-                    : `${TARGET_NOT_PROMISE} Beat ${nifty ? Math.round((nifty.beatRate || 0) * 100) : 0}% of ticks.`
+                  : `${TARGET_NOT_PROMISE} Beat ${nifty ? Math.round((nifty.beatRate || 0) * 100) : 0}% of ticks.`
               }
-              tone={satEmpty ? "warn" : frozen ? (lastDay?.halted ? "bad" : "good") : onTrack ? "good" : "warn"}
+              tone={satEmpty ? "warn" : onTrack ? "good" : "warn"}
               testId="hero-satellite"
             />
             <Stat
@@ -301,13 +273,11 @@ function DeskShell() {
               hint={
                 isMock
                   ? tape.hint
-                  : frozen && pub
-                    ? campaignTapeHint(pub.manifest)
-                    : open && fillAllowed(campaign)
-                      ? "INDstocks tape, positional fills"
-                      : campaign?.clockOverride
-                        ? "Clock override is on"
-                        : "Research only. Market closed — no fills."
+                  : open && fillAllowed(campaign)
+                    ? "INDstocks tape, positional fills"
+                    : campaign?.clockOverride
+                      ? "Clock override is on"
+                      : "Research only. Market closed — no fills."
               }
               testId="hero-tape"
               tone={isMock ? "bad" : open ? "good" : "warn"}
@@ -325,7 +295,7 @@ function DeskShell() {
               <IPSForm
                 key={desk.ips?.id ?? "new"}
                 current={desk.ips}
-                frozen={Boolean(frozen && pub?.manifest.ipsId && pub.manifest.ipsId === desk.ips?.id)}
+                frozen={Boolean(published && pub?.manifest.ipsId && pub.manifest.ipsId === desk.ips?.id)}
                 onSave={desk.saveIPS}
               />
             )}

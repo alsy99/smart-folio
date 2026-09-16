@@ -65,12 +65,25 @@ make proto             # if you change proto/
 make tidy
 make test
 bash scripts/dev-backend.sh &   # gRPC 9081–9085 + gateway :8080
-cd apps/web && npm install && npx next dev --turbopack -p 43127
+make web               # desk :43127, all interfaces; browser calls /gw on this origin
 ```
 
-Open [http://127.0.0.1:43127](http://127.0.0.1:43127). With `AUTOSTART_CAMPAIGN=true` (default in the script) the 30-day paper book starts on its own. A missing `INDSTOCKS_ACCESS_TOKEN` shows **MOCK** on the hero — not a pretty fake +8%.
+Open [http://127.0.0.1:43127](http://127.0.0.1:43127). On the same LAN, use this machine's IP on port 43127. With `AUTOSTART_CAMPAIGN=true` (default in the script) the 30-day paper book starts on its own. A missing `INDSTOCKS_ACCESS_TOKEN` shows **MOCK** on the hero — not a pretty fake +8%.
 
 `docker compose up --build` boots the desk plus marketdata, trading, learning, sentiment, and advisor (gateway in front). Do not put API keys in `NEXT_PUBLIC_*`.
+
+### Over the internet
+
+The desk is one origin. Next proxies `/gw/*` to the gateway; gRPC ports stay on the machine. A Cloudflare quick tunnel publishes HTTPS:
+
+```bash
+brew install cloudflare/cloudflare/cloudflared   # once
+bash scripts/dev-backend.sh &
+make web
+make public    # prints https://*.trycloudflare.com — leave it running
+```
+
+Anyone with that URL can drive the paper book (start/stop autopilot, IPS, chat). Do not paste it in a ticket. Ctrl-C drops the tunnel. This is not a production deploy and does not arm live orders.
 
 ## Environment
 
@@ -89,7 +102,8 @@ Open [http://127.0.0.1:43127](http://127.0.0.1:43127). With `AUTOSTART_CAMPAIGN=
 | `INDSTOCKS_ACCESS_TOKEN` or `INDMONEY_API_TOKEN` | INDstocks access token for live NSE quotes and history. Empty = mock tape. |
 | `INDSTOCKS_API_KEY` / `INDSTOCKS_MPIN` / `INDSTOCKS_TOTP_SECRET` | Optional TOTP mint if you do not paste a dashboard token |
 | `AUTOPILOT_LIVE_IND` | Ignored. Orders are never sent to INDstocks. |
-| `NEXT_PUBLIC_API_URL` | Frontend → gateway (default `http://127.0.0.1:8080`). Never an API key. |
+| `NEXT_PUBLIC_API_URL` | Frontend → gateway. Unset = same-origin `/gw` (works off-localhost). Never an API key. |
+| `GATEWAY_URL` | Next rewrite target for `/gw` (default `http://127.0.0.1:8080`). Server-side only. |
 | `GATEWAY_RPS` / `GATEWAY_BURST` | Gateway token-bucket rate limit (default 40/s, burst 80) |
 | `LOG_FORMAT` | `json` (default) or `text` |
 

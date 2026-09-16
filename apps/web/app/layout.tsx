@@ -18,6 +18,10 @@ const serif = Literata({
 export const metadata: Metadata = {
   title: "Aperture",
   description: "NSE positional cash paper book versus Nifty. Fills only while the session is open.",
+  icons: {
+    icon: "/icon.png",
+    apple: "/apple-touch-icon.png",
+  },
 };
 
 export const viewport: Viewport = {

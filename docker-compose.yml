@@ -83,7 +83,7 @@ services:
     volumes: ["./apps/web:/app"]
     command: sh -c "npm install && npx next dev --turbopack -p 43127 -H 0.0.0.0"
     environment:
-      NEXT_PUBLIC_API_URL: http://127.0.0.1:8080
+      GATEWAY_URL: http://gateway:8080
     ports: ["43127:43127"]
     depends_on: [gateway]
 

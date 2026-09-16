@@ -19,7 +19,9 @@ import type { IPS } from "./ips";
 
 export * from "./types";
 
-const API = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8080";
+// Same-origin /gw is rewritten to the gateway (next.config.ts). A full URL
+// here is only for pointing the browser at a gateway on another host.
+const API = (process.env.NEXT_PUBLIC_API_URL || "/gw").replace(/\/$/, "") || "/gw";
 
 async function get<T>(path: string): Promise<T> {
   const r = await fetch(`${API}${path}`, { cache: "no-store" });
