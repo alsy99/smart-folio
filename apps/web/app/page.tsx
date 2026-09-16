@@ -15,8 +15,8 @@ import { Button } from "@/components/ui/button";
 import { useDesk } from "@/hooks/use-desk";
 import { inr, istStamp, pct } from "@/lib/utils";
 import { mockTape } from "@/lib/tape";
-import { heroExcess, heroExcessHint, heroTape } from "@/lib/hero";
-import { ipsLine } from "@/lib/ips";
+import { heroExcess, heroNiftyHint, heroTape } from "@/lib/hero";
+import { deskIPSLine } from "@/lib/ips";
 import { rosterIsDefault, rosterLine } from "@/lib/roster";
 import { satelliteEmpty, satelliteState, TARGET_NOT_PROMISE } from "@/lib/satellite";
 import { fillAllowed } from "@/lib/session";
@@ -72,7 +72,8 @@ function DeskShell() {
   // EMPTY rather than rendering failed methods as live. Use this session's
   // weights, not the frozen cash-month roster.
   const satEmpty = satelliteEmpty(portfolio?.weights);
-  const satellite = satelliteState(portfolio?.weights, Boolean(desk.ips));
+  const holdings = (desk.positions?.length ?? 0) > 0;
+  const satellite = satelliteState(portfolio?.weights, Boolean(desk.ips || campaign?.ipsId), holdings);
   const niftyHero = isMock ? heroExcess(health, nifty?.excessPct) : nifty ? pct(nifty.excessPct) : "—";
 
   function setTab(id: DeskTab) {
@@ -211,8 +212,8 @@ function DeskShell() {
           )}
 
           <p data-testid="hero-ips" className="mt-4 text-sm text-steel">
-            <span className="font-semibold text-ink">IPS</span> · {ipsLine(desk.ips)}
-            {desk.ipsMissing && !desk.ips ? (
+            <span className="font-semibold text-ink">IPS</span> · {deskIPSLine(desk.ips, campaign?.ipsLine, holdings)}
+            {desk.ipsMissing && !desk.ips && !campaign?.ipsId && !holdings ? (
               <>
                 {" "}
                 <button type="button" className="underline decoration-brass underline-offset-2" onClick={() => setTab("policy")}>
@@ -247,24 +248,28 @@ function DeskShell() {
             <Stat
               label="Versus Nifty 50"
               value={niftyHero}
-              hint={
-                isMock
-                  ? heroExcessHint(health)
-                  : nifty
-                    ? `Target, not a promise · annualised ${pct(nifty.excessAnnPct)}`
-                    : "Start a campaign"
-              }
+              hint={heroNiftyHint(health, nifty, campaign?.daysElapsed)}
               tone={isMock ? "bad" : (nifty?.excessPct || 0) >= 0 ? "good" : "bad"}
             />
             <Stat
               label={satEmpty ? "Satellite" : "Ten-point track"}
-              value={satEmpty ? satellite.value : onTrack ? "On track" : "Off pace"}
+              value={
+                satEmpty
+                  ? satellite.value
+                  : (campaign?.daysElapsed ?? 0) < 1
+                    ? "Too soon"
+                    : onTrack
+                      ? "On track"
+                      : "Off pace"
+              }
               hint={
                 satEmpty
                   ? satellite.hint
-                  : `${TARGET_NOT_PROMISE} Beat ${nifty ? Math.round((nifty.beatRate || 0) * 100) : 0}% of ticks.`
+                  : (campaign?.daysElapsed ?? 0) < 1
+                    ? "Need a full day before a year-rate. Target, not a promise."
+                    : `${TARGET_NOT_PROMISE} Beat ${nifty ? Math.round((nifty.beatRate || 0) * 100) : 0}% of ticks.`
               }
-              tone={satEmpty ? "warn" : onTrack ? "good" : "warn"}
+              tone={satEmpty ? "warn" : (campaign?.daysElapsed ?? 0) < 1 ? "warn" : onTrack ? "good" : "warn"}
               testId="hero-satellite"
             />
             <Stat
@@ -273,11 +278,13 @@ function DeskShell() {
               hint={
                 isMock
                   ? tape.hint
-                  : open && fillAllowed(campaign)
-                    ? "INDstocks tape, positional fills"
-                    : campaign?.clockOverride
-                      ? "Clock override is on"
-                      : "Research only. Market closed — no fills."
+                  : !campaign?.ipsId && !desk.ips && !holdings
+                    ? "No IPS bound — no fills."
+                    : open && fillAllowed(campaign)
+                      ? "INDstocks tape, positional fills"
+                      : campaign?.clockOverride
+                        ? "Clock override is on"
+                        : "Research only. Market closed — no fills."
               }
               testId="hero-tape"
               tone={isMock ? "bad" : open ? "good" : "warn"}

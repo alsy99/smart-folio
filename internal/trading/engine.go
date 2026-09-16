@@ -235,13 +235,18 @@ func (s *Service) Execute(ctx context.Context) (*tradingv1.TickResponse, error) 
 
 	// Core first: policy decides the calendar tickets, this loop executes
 	// them through the same broker and cost model. Then the satellite.
-	coreFills, coreTurnover := s.coreLocked(ctx, now, last)
-	turnover += coreTurnover
+	// No IPS, no tickets — research can still run; the book holds cash.
+	var coreFills int
+	if s.ips != nil {
+		var coreTurnover float64
+		coreFills, coreTurnover = s.coreLocked(ctx, now, last)
+		turnover += coreTurnover
+	}
 
 	snap := s.snapshotLocked()
 	if broker.Halted(snap) {
 		s.desk.NoteHalt(snap)
-	} else {
+	} else if s.ips != nil {
 		for _, sym := range universe.EquitySymbols() {
 			// IPS satellite cap: sleeve notional ≤ SatellitePct × equity.
 			// Under a 100% core there is no satellite at all.
@@ -367,7 +372,11 @@ func (s *Service) Execute(ctx context.Context) (*tradingv1.TickResponse, error) 
 			s.beatWins[b.Symbol]++
 		}
 	}
-	s.log.Info("paper execute", "fills", fills, "core_fills", coreFills, "satellite_fills", s.lastSatFills, "closes", closes, "equity", eq)
+	ipsID := ""
+	if s.ips != nil {
+		ipsID = s.ips.ID
+	}
+	s.log.Info("paper execute", "fills", fills, "core_fills", coreFills, "satellite_fills", s.lastSatFills, "closes", closes, "equity", eq, "ips", ipsID)
 	return &tradingv1.TickResponse{Fills: int32(fills), Closes: int32(closes), Equity: eq}, nil
 }
 

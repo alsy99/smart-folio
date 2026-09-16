@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { liveMethods, satelliteEmpty, satelliteState, SATELLITE_EMPTY } from "./satellite";
+import { liveMethods, satelliteEmpty, satelliteState, SATELLITE_EMPTY, SATELLITE_EMPTY_WHY } from "./satellite";
 import type { Weight } from "./types";
 
 const failing = (id: string): Weight => ({
@@ -30,6 +30,12 @@ describe("empty satellite roster", () => {
     const s = satelliteState(weights, true);
     expect(s.value).toMatch(/EMPTY/);
     expect(s.hint).not.toMatch(/CASH/);
+  });
+
+  it("with holdings and no IPS object, still not CASH", () => {
+    const s = satelliteState(weights, false, true);
+    expect(s.hint).toBe(SATELLITE_EMPTY_WHY);
+    expect(s.hint).not.toMatch(/CASH|No IPS/i);
   });
 
   it("does not call an unanswered desk empty", () => {

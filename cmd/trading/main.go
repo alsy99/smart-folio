@@ -13,6 +13,7 @@ import (
 	"aperture/internal/trading"
 	"aperture/pkg/campaign"
 	"aperture/pkg/config"
+	"aperture/pkg/costs"
 	"aperture/pkg/grpcx"
 	"aperture/pkg/llm"
 	"aperture/pkg/serve"
@@ -38,13 +39,15 @@ func main() {
 	if wresp, err := ln.GetWeights(ctx, &learningv1.GetWeightsRequest{}); err == nil {
 		svc.SeedWeights(wresp.Weights)
 	}
-	go svc.Loop(ctx)
-	if cfg.Autostart {
-		go svc.Autostart(ctx)
-	}
 	// Policy is hosted on the trading process: one binary, two services.
-	// Policy decides targets; trading executes them.
+	// Bind the IPS before Autostart so the book never buys a blank statement.
 	store := policy.NewFileStore(config.String("IPS_DIR", "data/ips"))
+	p, err := policy.Boot(store, config.String("IPS_ID", ""), costs.StartCash)
+	if err != nil {
+		slog.Warn("IPS boot; book holds cash until a statement is put", "err", err)
+	} else {
+		svc.BindIPS(p)
+	}
 	pol := policy.New(policy.Deps{
 		Store:  store,
 		Frozen: campaign.FrozenIPS,
@@ -52,14 +55,9 @@ func main() {
 		OnPut:  svc.BindIPS,
 		Log:    slog.Default(),
 	})
-	// Boot under the statement named by IPS_ID, if it is on disk, so a
-	// restart does not silently drop the core.
-	if id := config.String("IPS_ID", ""); id != "" {
-		if p, err := store.Get(id); err == nil {
-			svc.BindIPS(p)
-		} else {
-			slog.Warn("IPS_ID not found; book runs without a core until one is put", "id", id, "err", err)
-		}
+	go svc.Loop(ctx)
+	if cfg.Autostart {
+		go svc.Autostart(ctx)
 	}
 	if err := serve.GRPC(ctx, cfg.Bind, func(s *grpc.Server) {
 		tradingv1.RegisterTradingServiceServer(s, svc)

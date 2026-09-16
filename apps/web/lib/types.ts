@@ -47,6 +47,10 @@ export type Campaign = {
   sessionStatus: string;
   ticks: number;
   clockOverride: boolean;
+  /** Bound IPS. Empty until a statement is put; no fills until then. */
+  ipsId?: string;
+  ipsLine?: string;
+  ipsHash?: string;
 };
 
 export type Benchmark = {

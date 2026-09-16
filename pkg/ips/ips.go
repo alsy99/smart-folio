@@ -153,6 +153,10 @@ func (p IPS) Hash() string {
 	return hex.EncodeToString(sum[:12])
 }
 
+// IDA is IPS A: 100% core vs Nifty 50, monthly. The live desk boots this
+// statement when nothing is bound yet.
+const IDA = "ips-a-core100"
+
 // Default is the shipped statement: beat Nifty 50 over five years, 15%
 // pain limit, 100% core, monthly, empty satellite folded into core.
 func Default(id string, startCash float64) IPS {
@@ -162,6 +166,9 @@ func Default(id string, startCash float64) IPS {
 		Rebalance: RebalanceMonthly, StartCash: startCash, FoldSatellite: true,
 	}
 }
+
+// A is IPS A, the default live-desk statement.
+func A(startCash float64) IPS { return Default(IDA, startCash) }
 
 // CoreSymbols is the v1 core universe: the twelve campaign names. The
 // allocator in pkg/core owns the weights; this only names the set so a

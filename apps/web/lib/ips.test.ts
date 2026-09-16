@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildIPS, DEFAULT_FORM, ipsLine, type IPSForm } from "./ips";
+import { buildIPS, DEFAULT_FORM, deskIPSLine, ipsLine, type IPSForm } from "./ips";
 
 const good: IPSForm = { ...DEFAULT_FORM, id: "c-1" };
 
@@ -43,5 +43,14 @@ describe("IPS form", () => {
     const line = ipsLine(buildIPS(good).ips);
     expect(line).toMatch(/core 100%/);
     expect(line).not.toMatch(/guarantee|promise/i);
+  });
+
+  it("GET line is what every client paints; holdings are never CASH", () => {
+    const server = { ...buildIPS(good).ips!, line: "beat_nifty · 5y · DD cap 15% · vs NIFTY50 · core 100% / satellite 0% · monthly" };
+    expect(deskIPSLine(server, undefined, false)).toBe(server.line);
+    expect(deskIPSLine(null, server.line, true)).toBe(server.line);
+    expect(deskIPSLine(null, undefined, true)).toBe("Core is invested.");
+    expect(deskIPSLine(null, undefined, true)).not.toMatch(/No IPS|CASH/i);
+    expect(deskIPSLine(null, undefined, false)).toMatch(/No IPS yet/);
   });
 });

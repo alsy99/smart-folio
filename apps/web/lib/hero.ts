@@ -1,4 +1,5 @@
 import { mockTape } from "./tape";
+import { pct } from "./utils";
 import type { Health, PublicManifest } from "./types";
 
 /**
@@ -56,4 +57,25 @@ export function heroExcessHint(health: Health | null): string {
     return "INDstocks token expired. Not a live excess vs Nifty.";
   }
   return "Mock tape. Not a live excess vs Nifty.";
+}
+
+/**
+ * Versus Nifty line. A session (Day 0) is not a year — do not print an
+ * annualised rate until a full calendar day has elapsed.
+ */
+export function heroNiftyHint(
+  health: Health | null,
+  nifty: { excessAnnPct: number } | null | undefined,
+  daysElapsed: number | undefined,
+): string {
+  if (mockTape(health)) {
+    return heroExcessHint(health);
+  }
+  if (!nifty) {
+    return "Start a campaign";
+  }
+  if (!Number.isFinite(daysElapsed as number) || (daysElapsed as number) < 1) {
+    return "Target, not a promise · session excess, not a year";
+  }
+  return `Target, not a promise · annualised ${pct(nifty.excessAnnPct)}`;
 }

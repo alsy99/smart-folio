@@ -16,15 +16,22 @@ import (
 
 // Store persists statements. One file per IPS so a restart reads back
 // exactly what was accepted; the hash is recomputed, never stored.
+// Bound is the statement the live book is under; GET /ips with no id
+// returns it so every client paints the same line.
 type Store interface {
 	Get(id string) (ips.IPS, error)
 	Put(p ips.IPS) error
 	List() ([]ips.IPS, error)
+	Bound() (ips.IPS, error)
+	SetBound(id string) error
 }
 
 var ErrNotFound = errors.New("ips: not found")
 
 var safeID = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$`)
+
+// boundFile is not a .json so List ignores it.
+const boundFile = "BOUND"
 
 // FileStore keeps data/ips/<id>.json. data/ is gitignored except roster/.
 type FileStore struct {
@@ -109,10 +116,42 @@ func (s *FileStore) List() ([]ips.IPS, error) {
 	return out, nil
 }
 
+func (s *FileStore) Bound() (ips.IPS, error) {
+	b, err := os.ReadFile(filepath.Join(s.Dir, boundFile))
+	if errors.Is(err, os.ErrNotExist) {
+		return ips.IPS{}, ErrNotFound
+	}
+	if err != nil {
+		return ips.IPS{}, err
+	}
+	id := strings.TrimSpace(string(b))
+	if id == "" {
+		return ips.IPS{}, ErrNotFound
+	}
+	return s.Get(id)
+}
+
+func (s *FileStore) SetBound(id string) error {
+	if _, err := s.path(id); err != nil {
+		return err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := os.MkdirAll(s.Dir, 0o755); err != nil {
+		return err
+	}
+	tmp := filepath.Join(s.Dir, boundFile+".tmp")
+	if err := os.WriteFile(tmp, []byte(id+"\n"), 0o644); err != nil {
+		return err
+	}
+	return os.Rename(tmp, filepath.Join(s.Dir, boundFile))
+}
+
 // MemStore is for tests and replays.
 type MemStore struct {
-	mu sync.Mutex
-	m  map[string]ips.IPS
+	mu    sync.Mutex
+	m     map[string]ips.IPS
+	bound string
 }
 
 func NewMemStore() *MemStore { return &MemStore{m: map[string]ips.IPS{}} }
@@ -143,4 +182,27 @@ func (s *MemStore) List() ([]ips.IPS, error) {
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
 	return out, nil
+}
+
+func (s *MemStore) Bound() (ips.IPS, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.bound == "" {
+		return ips.IPS{}, ErrNotFound
+	}
+	p, ok := s.m[s.bound]
+	if !ok {
+		return ips.IPS{}, ErrNotFound
+	}
+	return p, nil
+}
+
+func (s *MemStore) SetBound(id string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, ok := s.m[id]; !ok {
+		return ErrNotFound
+	}
+	s.bound = id
+	return nil
 }

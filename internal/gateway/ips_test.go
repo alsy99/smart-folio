@@ -66,4 +66,17 @@ func TestIPSRoutes(t *testing.T) {
 	if got.Hash == "" || !strings.Contains(got.Line, "core 100%") {
 		t.Fatalf("GET body %+v", got)
 	}
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/ips", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET /ips %d %s", rec.Code, rec.Body)
+	}
+	var bound struct {
+		ID   string `json:"id"`
+		Line string `json:"line"`
+	}
+	_ = json.NewDecoder(rec.Body).Decode(&bound)
+	if bound.ID != "c-1" || bound.Line != got.Line {
+		t.Fatalf("GET /ips must paint the same line as GET /ips/c-1: %+v vs %+v", bound, got)
+	}
 }

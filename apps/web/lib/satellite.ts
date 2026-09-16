@@ -25,11 +25,13 @@ export function liveMethods(weights: Weight[] | null | undefined): Weight[] {
 export function satelliteState(
   weights: Weight[] | null | undefined,
   hasCore: boolean,
+  hasHoldings = false,
 ): { value: string; hint: string } {
   if (satelliteEmpty(weights)) {
+    const invested = hasCore || hasHoldings;
     return {
       value: SATELLITE_EMPTY,
-      hint: hasCore ? SATELLITE_EMPTY_WHY : `${SATELLITE_EMPTY_WHY} ${NO_CORE_YET}`,
+      hint: invested ? SATELLITE_EMPTY_WHY : `${SATELLITE_EMPTY_WHY} ${NO_CORE_YET}`,
     };
   }
   const live = liveMethods(weights);

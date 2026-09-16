@@ -35,4 +35,13 @@ func TestExcessAndAnnualized(t *testing.T) {
 	if got := Annualized(0, 30); got != 0 {
 		t.Fatalf("got %v", got)
 	}
+	if got := Annualized(0.01, 0.04); got != 0 {
+		t.Fatalf("day-0 noise must not annualise: %v", got)
+	}
+	if got := Annualized(0.01, 0); got != 0 {
+		t.Fatalf("zero days: %v", got)
+	}
+	if Annualized(0.10, 365) == 0 {
+		t.Fatal("a full year of 10% excess should annualise")
+	}
 }

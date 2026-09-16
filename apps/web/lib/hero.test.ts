@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { campaignTapeHint, heroExcess, heroTape } from "./hero";
+import { campaignTapeHint, heroExcess, heroNiftyHint, heroTape } from "./hero";
 import { mockTape } from "./tape";
 import type { PublicManifest } from "./types";
 
@@ -55,5 +55,25 @@ describe("missing INDstocks token", () => {
     expect(heroTape(dead).hint).toMatch(/expired or invalid/i);
     expect(heroTape(dead).hint).not.toMatch(/No INDstocks token/);
     expect(heroExcess(dead, 8)).toBe("MOCK");
+  });
+});
+
+describe("Day-0 is not an annualised return", () => {
+  const live = {
+    status: "ok" as const,
+    tape: "live" as const,
+    indstocks: { configured: true, mode: "live", profileOk: true, scrips: 15, orders: "off" },
+  };
+  const nifty = { excessAnnPct: 847 };
+
+  it("calls a session move session excess, not a year", () => {
+    const hint = heroNiftyHint(live, nifty, 0);
+    expect(hint).toMatch(/session excess/i);
+    expect(hint).not.toMatch(/annualis/i);
+    expect(hint).not.toMatch(/847/);
+  });
+
+  it("may annualise after a full day", () => {
+    expect(heroNiftyHint(live, nifty, 1)).toMatch(/annualised \+847\.00%/);
   });
 });

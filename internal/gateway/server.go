@@ -165,6 +165,9 @@ func (a *API) Handler() http.Handler {
 		}
 		return a.pl.PutIPS(ctx, &policyv1.PutIPSRequest{Ips: &in})
 	}))
+	mux.HandleFunc("GET /ips", a.unary(15*time.Second, func(ctx context.Context, _ *http.Request) (proto.Message, error) {
+		return a.pl.GetIPS(ctx, &policyv1.GetIPSRequest{})
+	}))
 	mux.HandleFunc("GET /ips/{id}", a.unary(15*time.Second, func(ctx context.Context, r *http.Request) (proto.Message, error) {
 		return a.pl.GetIPS(ctx, &policyv1.GetIPSRequest{Id: r.PathValue("id")})
 	}))

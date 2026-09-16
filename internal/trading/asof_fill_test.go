@@ -116,11 +116,13 @@ func (s *snStub) GetInvestigations(context.Context, *sentimentv1.GetInvestigatio
 func tickBook(t *testing.T, now time.Time, reports []*commonv1.InvestigationReport) *tradingv1.TickResponse {
 	t.Helper()
 	t.Setenv("INVESTIGATION_DIR", t.TempDir())
-	svc := New(Deps{MarketData: mdStub{}, Learning: lnStub{}, Sentiment: &snStub{reports: reports}, Now: func() time.Time { return now }})
+	p := paperSatIPS()
+	svc := New(Deps{MarketData: mdStub{}, Learning: lnStub{}, Sentiment: &snStub{reports: reports}, Now: func() time.Time { return now }, IPS: &p})
 	ctx := context.Background()
 	if _, err := svc.StartCampaign(ctx, &tradingv1.StartCampaignRequest{Days: 30}); err != nil {
 		t.Fatal(err)
 	}
+	holdCoreCalendar(svc, now)
 	resp, err := svc.Tick(ctx, &tradingv1.TickRequest{})
 	if err != nil {
 		t.Fatal(err)
@@ -194,6 +196,7 @@ func TestFillPointsAtExactInvestigation(t *testing.T) {
 		t.Fatal(err)
 	}
 	now := friday1525()
+	p := paperSatIPS()
 	svc := New(Deps{
 		MarketData: mdStub{}, Learning: lnStub{},
 		Sentiment: &snStub{reports: []*commonv1.InvestigationReport{{
@@ -201,13 +204,14 @@ func TestFillPointsAtExactInvestigation(t *testing.T) {
 			Score: 0.8, Confidence: 0.9, EventType: "product", Stance: "bullish",
 			Sources: []*commonv1.NewsItem{{PublishedAtUnixMs: now.UnixMilli(), Symbols: []string{"TCS"}}},
 		}}},
-		Now: func() time.Time { return now },
+		Now: func() time.Time { return now }, IPS: &p,
 	})
 	svc.inv = research.NewDesk(dir)
 	ctx := context.Background()
 	if _, err := svc.StartCampaign(ctx, &tradingv1.StartCampaignRequest{Days: 30}); err != nil {
 		t.Fatal(err)
 	}
+	holdCoreCalendar(svc, now)
 	if _, err := svc.Tick(ctx, &tradingv1.TickRequest{}); err != nil {
 		t.Fatal(err)
 	}

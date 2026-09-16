@@ -2,7 +2,6 @@ package trading
 
 import (
 	"context"
-	"math"
 	"time"
 
 	commonv1 "aperture/gen/common/v1"
@@ -49,12 +48,17 @@ func (s *Service) GetCampaign(_ context.Context, _ *tradingv1.GetCampaignRequest
 	if s.camp.active {
 		elapsed = int(now.Sub(s.camp.start).Hours() / 24)
 	}
+	var ipsID, ipsLine, ipsHash string
+	if s.ips != nil {
+		ipsID, ipsLine, ipsHash = s.ips.ID, s.ips.Line(), s.ips.Hash()
+	}
 	return &tradingv1.GetCampaignResponse{
 		Active: s.camp.active, Autopilot: s.camp.auto, MarketOpen: marketclock.IsOpen(now),
 		StartedAtUnixMs: s.camp.start.UnixMilli(), EndsAtUnixMs: s.camp.end.UnixMilli(),
 		DaysElapsed: int32(elapsed), DaysTotal: int32(s.camp.days),
 		SessionStatus: marketclock.SessionStatus(now), Ticks: int32(s.camp.ticks),
 		ClockOverride: marketclock.OverrideOpen(),
+		IpsId:         ipsID, IpsLine: ipsLine, IpsHash: ipsHash,
 	}, nil
 }
 
@@ -145,9 +149,9 @@ func (s *Service) GetBenchmarks(ctx context.Context, _ *tradingv1.GetBenchmarksR
 	eq := s.markLocked()
 	rP := excess.PortfolioReturn(eq, s.eq0)
 	start := s.camp.start
-	days := math.Max(1, s.now().Sub(start).Hours()/24)
-	if !s.camp.active {
-		days = 1
+	days := 0.0
+	if s.camp.active && !start.IsZero() {
+		days = s.now().Sub(start).Hours() / 24
 	}
 	bs := s.benchStart
 	bw, bn := s.beatWins, s.beatN
@@ -184,7 +188,7 @@ func (s *Service) GetBenchmarks(ctx context.Context, _ *tradingv1.GetBenchmarksR
 		points = append(points, &commonv1.BenchmarkPoint{
 			Id: b.Symbol, Name: b.Name, Last: lasts[b.Symbol], Start: st,
 			ReturnPct: rB * 100, ExcessPct: ex * 100, ExcessAnnPct: ann * 100,
-			OnTrack: excess.OnTrack(ann), BeatRate: br,
+			OnTrack: days >= 1 && excess.OnTrack(ann), BeatRate: br,
 		})
 	}
 	return &tradingv1.GetBenchmarksResponse{Benchmarks: points, PortfolioReturnPct: rP * 100}, nil

@@ -72,6 +72,7 @@ export const api = {
   backtest: () => get<BacktestReport>("/backtest"),
   runBacktest: (years = 5) => post<BacktestReport>("/backtest", { years }, 90000),
   putIPS: (ips: IPS) => put<IPS>("/ips", ips),
+  boundIPS: () => get<IPS>("/ips"),
   ips: (id: string) => get<IPS>(`/ips/${encodeURIComponent(id)}`),
   previewTargets: (id: string) => post<Targets>(`/ips/${encodeURIComponent(id)}/preview`),
 };

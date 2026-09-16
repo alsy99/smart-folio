@@ -1,9 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { fillsFromTick, fillAllowed } from "./session";
 
-const closed = { marketOpen: false, sessionStatus: "closed" as const };
-const weekend = { marketOpen: false, sessionStatus: "weekend" as const };
-const open = { marketOpen: true, sessionStatus: "open" as const };
+const closed = { marketOpen: false, sessionStatus: "closed" as const, ipsId: "c-1" };
+const weekend = { marketOpen: false, sessionStatus: "weekend" as const, ipsId: "c-1" };
+const open = { marketOpen: true, sessionStatus: "open" as const, ipsId: "c-1" };
+const openNoIPS = { marketOpen: true, sessionStatus: "open" as const };
 
 describe("market closed ⇒ no fill", () => {
   it("refuses fills when the cash session is closed", () => {
@@ -27,5 +28,10 @@ describe("market closed ⇒ no fill", () => {
   it("counts fills only while the session is open", () => {
     expect(fillAllowed(open)).toBe(true);
     expect(fillsFromTick(open, { skipped: false, fills: 2, reason: "" })).toBe(2);
+  });
+
+  it("refuses fills until an IPS is bound", () => {
+    expect(fillAllowed(openNoIPS)).toBe(false);
+    expect(fillsFromTick(openNoIPS, { skipped: false, fills: 4, reason: "" })).toBe(0);
   });
 });

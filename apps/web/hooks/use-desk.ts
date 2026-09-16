@@ -45,7 +45,7 @@ export function useDesk() {
 
   const refresh = useCallback(async () => {
     try {
-      const [p, c, b, j, inv, n, s, bt, rs, h, pubCamp, pubs] = await Promise.all([
+      const [p, c, b, j, inv, n, s, bt, rs, h, pubCamp, pubs, bound] = await Promise.all([
         api.portfolio(),
         api.campaign(),
         api.benchmarks(),
@@ -58,6 +58,7 @@ export function useDesk() {
         api.health().catch(() => null),
         api.publicCampaign().catch(() => null),
         api.publicCampaigns().catch(() => ({ campaigns: [] as PublicCampaign[] })),
+        api.boundIPS().catch(() => null),
       ]);
       setPortfolio(p);
       setCampaign(c);
@@ -72,14 +73,11 @@ export function useDesk() {
       setPub(pubCamp);
       setCampaigns(pubs?.campaigns ?? []);
       setErr(null);
-      // The IPS id lives on this browser session; the statement lives on
-      // the policy service. No id yet is a first run, not an error.
-      const id = typeof window !== "undefined" ? window.localStorage.getItem(IPS_STORAGE_KEY) : null;
-      if (id) {
-        const cur = await api.ips(id).catch(() => null);
-        setIPS(cur);
-        setIPSMissing(!cur);
-        setTargets(cur ? await api.previewTargets(id).catch(() => null) : null);
+      // GET /ips (no id) is the bound statement. Every browser paints that line.
+      if (bound) {
+        setIPS(bound);
+        setIPSMissing(false);
+        setTargets(bound.id ? await api.previewTargets(bound.id).catch(() => null) : null);
       } else {
         setIPS(null);
         setIPSMissing(true);
@@ -160,6 +158,7 @@ export function useDesk() {
     window.localStorage.setItem(IPS_STORAGE_KEY, saved.id);
     setIPS(saved);
     setIPSMissing(false);
+    await refresh();
   }
 
   async function runBacktest() {

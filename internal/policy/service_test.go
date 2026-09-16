@@ -74,6 +74,16 @@ func TestHashSurvivesRestart(t *testing.T) {
 	if again.Hash != ips.Default("c-1", 1_000_000).Hash() {
 		t.Fatal("stored statement must hash like the accepted one")
 	}
+	if again.Line != got.Line || again.Line == "" {
+		t.Fatalf("line %q after restart, was %q", again.Line, got.Line)
+	}
+	anon, err := b.GetIPS(context.Background(), &policyv1.GetIPSRequest{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if anon.Id != again.Id || anon.Line != again.Line {
+		t.Fatalf("GET with no id must return the bound statement, got %+v", anon)
+	}
 }
 
 func TestFrozenIPSCannotChange(t *testing.T) {
@@ -104,5 +114,40 @@ func TestFileStoreRejectsPathTricks(t *testing.T) {
 	p := ips.Default("../evil", 1)
 	if err := s.Put(p); err == nil {
 		t.Fatal("id with path separators must be refused")
+	}
+}
+
+func TestBootEmptyCreatesIPSA(t *testing.T) {
+	dir := t.TempDir()
+	st := NewFileStore(dir)
+	p, err := Boot(st, "", 1_000_000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p.ID != ips.IDA {
+		t.Fatalf("want IPS A %s, got %s", ips.IDA, p.ID)
+	}
+	again, err := NewFileStore(dir).Bound()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if again.ID != p.ID || again.Line() != p.Line() {
+		t.Fatalf("BOUND after restart %+v vs %+v", again, p)
+	}
+}
+
+func TestBootKeepsPutStatement(t *testing.T) {
+	dir := t.TempDir()
+	svc := New(Deps{Store: NewFileStore(dir)})
+	put, err := svc.PutIPS(context.Background(), req(func(m *policyv1.IPS) { m.Id = "test" }))
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, err := Boot(NewFileStore(dir), "", 1_000_000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p.ID != "test" || p.Line() != put.Line {
+		t.Fatalf("boot dropped the put statement: %+v want line %s", p, put.Line)
 	}
 }

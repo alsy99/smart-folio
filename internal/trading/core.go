@@ -15,11 +15,11 @@ import (
 
 const LogSatelliteCap = "SATELLITE_CAP"
 
-// satellitePct is the IPS satellite slice; with no IPS the legacy book is
-// all satellite and the cap is the gross cap.
+// satellitePct is the IPS satellite slice. No bound statement means no
+// satellite room — fills wait for an IPS.
 func (s *Service) satellitePct() float64 {
 	if s.ips == nil {
-		return broker.GrossCap
+		return 0
 	}
 	return s.ips.SatellitePct
 }
@@ -34,9 +34,8 @@ func (s *Service) coreValueLocked(last map[string]float64) float64 {
 }
 
 // satelliteRoomLocked is how much more satellite notional the IPS allows:
-// the tilted slice × equity minus what the satellite already holds. The
-// tilt only applies under an IPS; the legacy all-satellite book keeps the
-// gross cap.
+// the tilted slice × equity minus what the satellite already holds. With
+// no IPS the room is zero.
 func (s *Service) satelliteRoomLocked(snap broker.Snapshot, last map[string]float64, score float64) float64 {
 	pct := s.satellitePct()
 	if s.ips != nil {

@@ -11,6 +11,13 @@ func TestDefaultIsValid(t *testing.T) {
 	if err := good().Validate(); err != nil {
 		t.Fatal(err)
 	}
+	a := A(1_000_000)
+	if err := a.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	if a.ID != IDA {
+		t.Fatalf("IPS A id %s", a.ID)
+	}
 }
 
 func TestValidateRejectsOutOfWalls(t *testing.T) {

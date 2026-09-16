@@ -95,6 +95,9 @@ func (s *Service) PutIPS(_ context.Context, req *policyv1.PutIPSRequest) (*polic
 	if err := s.store.Put(p); err != nil {
 		return nil, status.Error(codes.Internal, err.Error())
 	}
+	if err := s.store.SetBound(p.ID); err != nil {
+		return nil, status.Error(codes.Internal, err.Error())
+	}
 	s.log.Info(LogIPSPut, "id", p.ID, "hash", p.Hash(), "line", p.Line())
 	if s.onPut != nil {
 		s.onPut(p)
@@ -133,9 +136,19 @@ func (s *Service) PreviewTargets(ctx context.Context, req *policyv1.PreviewTarge
 }
 
 func (s *Service) GetIPS(_ context.Context, req *policyv1.GetIPSRequest) (*policyv1.IPS, error) {
-	p, err := s.store.Get(req.GetId())
+	id := strings.TrimSpace(req.GetId())
+	var p ips.IPS
+	var err error
+	if id == "" {
+		p, err = s.store.Bound()
+	} else {
+		p, err = s.store.Get(id)
+	}
 	if errors.Is(err, ErrNotFound) {
-		return nil, status.Error(codes.NotFound, fmt.Sprintf("ips %q not found", req.GetId()))
+		if id == "" {
+			return nil, status.Error(codes.NotFound, "ips: none bound")
+		}
+		return nil, status.Error(codes.NotFound, fmt.Sprintf("ips %q not found", id))
 	}
 	if err != nil {
 		return nil, status.Error(codes.Internal, err.Error())

@@ -45,6 +45,11 @@ message GetCampaignResponse {
   string session_status = 8;
   int32 ticks = 9;
   bool clock_override = 10;
+  // Bound IPS. Empty until a statement is put (or loaded at boot).
+  // No fills until these are set.
+  string ips_id = 11;
+  string ips_line = 12;
+  string ips_hash = 13;
 }
 
 message SetAutopilotRequest {

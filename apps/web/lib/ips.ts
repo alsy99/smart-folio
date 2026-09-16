@@ -119,4 +119,20 @@ export function ipsLine(p: IPS | null | undefined): string {
   return `${GOAL_LABEL[p.goal] ?? p.goal} · ${p.horizonYears}y · DD cap ${Math.round(p.maxDd * 100)}% · vs ${BENCH_LABEL[p.benchmark] ?? p.benchmark} · core ${Math.round(p.corePct * 100)}% / satellite ${Math.round(p.satellitePct * 100)}%`;
 }
 
+/**
+ * Hero IPS line. GET /ips is the source of truth. Holdings mean the book
+ * is invested — never paint "No IPS" / CASH over an open position.
+ */
+export function deskIPSLine(
+  ips: IPS | null | undefined,
+  boundLine: string | undefined,
+  holdings: boolean,
+): string {
+  const line = (ips?.line || boundLine || "").trim();
+  if (line) return line;
+  if (ips) return ipsLine(ips);
+  if (holdings) return "Core is invested.";
+  return ipsLine(null);
+}
+
 export const IPS_STORAGE_KEY = "aperture.ipsId";

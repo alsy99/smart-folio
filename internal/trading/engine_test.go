@@ -12,6 +12,7 @@ import (
 	tradingv1 "aperture/gen/trading/v1"
 	"aperture/pkg/broker"
 	"aperture/pkg/costs"
+	"aperture/pkg/ips"
 	"aperture/pkg/learn"
 	"aperture/pkg/live"
 	"aperture/pkg/marketclock"
@@ -90,11 +91,13 @@ func TestZeroWeightDefaultsNeverFill(t *testing.T) {
 	now := friday1525()
 	bull := lateArticle(false, 0.9)
 	bull.Sources[0].PublishedAtUnixMs = now.Add(-2 * time.Hour).UnixMilli() // in-session, would tilt
-	svc := New(Deps{MarketData: mdStub{}, Learning: zeroWeights{}, Sentiment: &snStub{reports: []*commonv1.InvestigationReport{bull}}, Now: func() time.Time { return now }})
+	p := ips.Default("c-1", costs.StartCash)
+	svc := New(Deps{MarketData: mdStub{}, Learning: zeroWeights{}, Sentiment: &snStub{reports: []*commonv1.InvestigationReport{bull}}, Now: func() time.Time { return now }, IPS: &p})
 	ctx := context.Background()
 	if _, err := svc.StartCampaign(ctx, &tradingv1.StartCampaignRequest{Days: 30}); err != nil {
 		t.Fatal(err)
 	}
+	holdCoreCalendar(svc, now)
 	resp, err := svc.Tick(ctx, &tradingv1.TickRequest{})
 	if err != nil {
 		t.Fatal(err)
@@ -133,7 +136,8 @@ func newReplaySvc(t *testing.T) (*Service, *testClock) {
 	t.Helper()
 	t.Setenv("INVESTIGATION_DIR", t.TempDir())
 	clk := &testClock{t: time.Date(2026, 9, 14, 15, 25, 0, 0, marketclock.Location())} // Monday
-	svc := New(Deps{MarketData: mdStub{}, Learning: lnStub{}, Sentiment: &snStub{}, Now: clk.Now})
+	p := paperSatIPS()
+	svc := New(Deps{MarketData: mdStub{}, Learning: lnStub{}, Sentiment: &snStub{}, Now: clk.Now, IPS: &p})
 	return svc, clk
 }
 
@@ -148,6 +152,7 @@ func TestExecuteHonoursTurnoverCap(t *testing.T) {
 	if _, err := svc.StartCampaign(ctx, &tradingv1.StartCampaignRequest{Days: 30}); err != nil {
 		t.Fatal(err)
 	}
+	holdCoreCalendar(svc, clk.Now())
 	svc.mu.Lock()
 	plan := bookPlan{signals: map[string]strategies.Signal{}, weights: map[string]float64{}, standAside: map[string]bool{}, invID: map[string]string{}}
 	for _, sym := range universe.EquitySymbols() {
@@ -283,5 +288,75 @@ func TestStopAutopilotTripsHumanKillSwitch(t *testing.T) {
 	}
 	if live.Killed() {
 		t.Fatal("Resume Autopilot clears the file for the paper book")
+	}
+}
+
+// TestNoFillsUntilIPSBound: autopilot and an open session are not enough.
+// The book holds cash until a statement is bound; that statement is what
+// GetCampaign reports for the hero.
+func TestNoFillsUntilIPSBound(t *testing.T) {
+	t.Setenv("INVESTIGATION_DIR", t.TempDir())
+	now := time.Date(2026, 9, 14, 15, 25, 0, 0, marketclock.Location())
+	svc := New(Deps{MarketData: mdStub{}, Learning: lnStub{}, Sentiment: &snStub{}, Now: func() time.Time { return now }})
+	ctx := context.Background()
+	if _, err := svc.StartCampaign(ctx, &tradingv1.StartCampaignRequest{Days: 30}); err != nil {
+		t.Fatal(err)
+	}
+	camp, err := svc.GetCampaign(ctx, &tradingv1.GetCampaignRequest{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if camp.IpsId != "" || camp.IpsLine != "" {
+		t.Fatalf("unbound book leaked IPS %q %q", camp.IpsId, camp.IpsLine)
+	}
+	resp, err := svc.Tick(ctx, &tradingv1.TickRequest{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.Fills != 0 {
+		t.Fatalf("fills before IPS: %d", resp.Fills)
+	}
+	p := ips.Default("hero-1", costs.StartCash)
+	svc.BindIPS(p)
+	camp, err = svc.GetCampaign(ctx, &tradingv1.GetCampaignRequest{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if camp.IpsId != p.ID || camp.IpsLine != p.Line() || camp.IpsHash != p.Hash() {
+		t.Fatalf("hero IPS id=%q line=%q hash=%q", camp.IpsId, camp.IpsLine, camp.IpsHash)
+	}
+	resp, err = svc.Tick(ctx, &tradingv1.TickRequest{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.Fills == 0 {
+		t.Fatal("core must build once the IPS is bound")
+	}
+}
+
+func TestGetBenchmarksDoesNotAnnualiseDayZero(t *testing.T) {
+	now := friday1525()
+	svc := New(Deps{MarketData: mdStub{}, Now: func() time.Time { return now }})
+	ctx := context.Background()
+	if _, err := svc.StartCampaign(ctx, &tradingv1.StartCampaignRequest{Days: 30}); err != nil {
+		t.Fatal(err)
+	}
+	svc.mu.Lock()
+	svc.cash = 1_010_000
+	svc.mu.Unlock()
+	got, err := svc.GetBenchmarks(ctx, &tradingv1.GetBenchmarksRequest{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.PortfolioReturnPct == 0 {
+		t.Fatal("fixture needs a session excess so a 1-day annualise would have been non-zero")
+	}
+	for _, b := range got.Benchmarks {
+		if b.ExcessAnnPct != 0 {
+			t.Fatalf("%s day-0 annualised %v (excess %v)", b.Id, b.ExcessAnnPct, b.ExcessPct)
+		}
+		if b.OnTrack {
+			t.Fatalf("%s on-track from day-0 noise", b.Id)
+		}
 	}
 }

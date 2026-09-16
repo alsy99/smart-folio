@@ -63,6 +63,8 @@ export function BookPanel({ desk }: { desk: ReturnType<typeof useDesk> }) {
           <div className="mt-4 h-64">
             {history.length >= 1 ? (
               <EquityChart data={history} open={open} />
+            ) : !campaign?.ipsId ? (
+              <Empty>No IPS bound. Set a policy — the book will not fill until then.</Empty>
             ) : !fillAllowed(campaign) ? (
               <Empty>Market closed. No fills. The cash window is 09:15–15:30 IST.</Empty>
             ) : (
@@ -137,11 +139,11 @@ export function BookPanel({ desk }: { desk: ReturnType<typeof useDesk> }) {
       <section>
         <h2 className="scroll-mt-6 text-lg font-semibold tracking-tight">Holdings</h2>
         <div className="mt-3">
-          {positions.length === 0 && satEmpty && !desk.ips ? (
+          {positions.length === 0 && satEmpty && !desk.ips && !desk.campaign?.ipsId ? (
             <div data-testid="book-satellite-empty" className="border border-brass/40 bg-paper px-4 py-3 text-sm">
               <p className="font-semibold">{SATELLITE_EMPTY}</p>
               <p className="mt-1 text-steel">
-                {SATELLITE_EMPTY_WHY} {desk.ips ? CORE_STAYS_INVESTED : NO_CORE_YET}
+                {SATELLITE_EMPTY_WHY} {desk.ips || desk.campaign?.ipsId ? CORE_STAYS_INVESTED : NO_CORE_YET}
                 {desk.portfolio ? ` Cash ${inr(desk.portfolio.cash)}.` : ""}
               </p>
             </div>
